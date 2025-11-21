@@ -20,6 +20,13 @@ const VoiceHQ = () => {
     const [isListening, setIsListening] = useState(false);
     const [currentVolume, setCurrentVolume] = useState(-100);
     const [vadEnabled, setVadEnabled] = useState(true);
+    const [showSettings, setShowSettings] = useState(false);
+    const [volumeThreshold, setVolumeThreshold] = useState(-20);
+    const [silenceDuration, setSilenceDuration] = useState(2000);
+
+    // Refs to avoid closure issues in VAD callbacks
+    const isRecordingRef = useRef(false);
+    const isProcessingRef = useRef(false);
 
     // Load logs and poll for updates
     useEffect(() => {
@@ -78,6 +85,11 @@ const VoiceHQ = () => {
                 });
 
                 await vadService.startMonitoring(stream);
+
+                // Apply user settings
+                vadService.setVolumeThreshold(volumeThreshold);
+                vadService.setSilenceThreshold(silenceDuration);
+
                 setIsListening(true);
 
                 vadService.setCallbacks({
@@ -103,19 +115,27 @@ const VoiceHQ = () => {
     }, [selectedRole, vadEnabled]);
 
     const handleVoiceStart = async () => {
-        if (isRecording || isProcessing) return;
+        if (isRecordingRef.current || isProcessingRef.current) {
+            console.log('⚠️ Already recording or processing, ignoring voice start');
+            return;
+        }
 
         console.log('🎤 Voice started - beginning recording...');
         try {
             await whisperService.startRecording();
             setIsRecording(true);
+            isRecordingRef.current = true;
         } catch (error) {
             console.error('Failed to start recording:', error);
         }
     };
 
     const handleVoiceEnd = async () => {
-        if (!isRecording) return;
+        console.log('🔔 handleVoiceEnd called. isRecording:', isRecordingRef.current);
+        if (!isRecordingRef.current) {
+            console.log('⚠️ Not recording, ignoring voice end');
+            return;
+        }
 
         console.log('⏹️ Voice ended - processing recording...');
         await processRecording();
@@ -124,7 +144,9 @@ const VoiceHQ = () => {
     const processRecording = async () => {
         try {
             setIsRecording(false);
+            isRecordingRef.current = false;
             setIsProcessing(true);
+            isProcessingRef.current = true;
             setProcessingStage('whisper');
             setProcessingText('');
 
@@ -159,6 +181,7 @@ const VoiceHQ = () => {
             whisperService.cancelRecording();
         } finally {
             setIsProcessing(false);
+            isProcessingRef.current = false;
             setProcessingStage('');
         }
     };
@@ -257,8 +280,8 @@ const VoiceHQ = () => {
                         {logs.map((log) => (
                             <div key={log.id} className="flex items-start space-x-3 animate-fade-in">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${log.roleId === 'A' ? 'bg-blue-600' :
-                                        log.roleId === 'B' ? 'bg-green-600' :
-                                            log.roleId === 'C' ? 'bg-purple-600' : 'bg-orange-600'
+                                    log.roleId === 'B' ? 'bg-green-600' :
+                                        log.roleId === 'C' ? 'bg-purple-600' : 'bg-orange-600'
                                     }`}>
                                     {log.roleId}
                                 </div>
@@ -274,8 +297,8 @@ const VoiceHQ = () => {
                         {isProcessing && (
                             <div className="flex items-start space-x-3">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${selectedRole.id === 'A' ? 'bg-blue-600' :
-                                        selectedRole.id === 'B' ? 'bg-green-600' :
-                                            selectedRole.id === 'C' ? 'bg-purple-600' : 'bg-orange-600'
+                                    selectedRole.id === 'B' ? 'bg-green-600' :
+                                        selectedRole.id === 'C' ? 'bg-purple-600' : 'bg-orange-600'
                                     }`}>
                                     {selectedRole.id}
                                 </div>
@@ -300,8 +323,8 @@ const VoiceHQ = () => {
                     <div className="h-24 bg-gray-800 border-t border-gray-700 flex items-center justify-center p-4">
                         <div className="flex items-center space-x-6 w-full max-w-2xl">
                             <div className={`flex items-center space-x-3 flex-1 ${isRecording ? 'text-red-400' :
-                                    isProcessing ? 'text-yellow-400' :
-                                        isListening ? 'text-green-400' : 'text-gray-500'
+                                isProcessing ? 'text-yellow-400' :
+                                    isListening ? 'text-green-400' : 'text-gray-500'
                                 }`}>
                                 <div className="relative">
                                     {isRecording ? (
@@ -335,8 +358,8 @@ const VoiceHQ = () => {
                                     <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
                                         <div
                                             className={`h-full transition-all duration-100 ${currentVolume > -40 ? 'bg-green-500' :
-                                                    currentVolume > -60 ? 'bg-yellow-500' :
-                                                        'bg-gray-600'
+                                                currentVolume > -60 ? 'bg-yellow-500' :
+                                                    'bg-gray-600'
                                                 }`}
                                             style={{
                                                 width: `${Math.max(0, Math.min(100, ((currentVolume + 100) / 100) * 100))}%`
@@ -350,18 +373,9 @@ const VoiceHQ = () => {
                             )}
 
                             <button
-                                onClick={() => {
-                                    setVadEnabled(!vadEnabled);
-                                    if (vadEnabled) {
-                                        vadService.stopMonitoring();
-                                        setIsListening(false);
-                                        showToast('자동 감지 비활성화됨');
-                                    } else {
-                                        showToast('자동 감지 활성화 중...');
-                                    }
-                                }}
+                                onClick={() => setShowSettings(true)}
                                 className="p-2 hover:bg-gray-700 rounded-full text-gray-400 hover:text-white"
-                                title={vadEnabled ? '자동 감지 끄기' : '자동 감지 켜기'}
+                                title="VAD 설정"
                             >
                                 <Settings className="w-5 h-5" />
                             </button>
@@ -427,6 +441,73 @@ const VoiceHQ = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Settings Modal */}
+            {showSettings && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-gray-800 rounded-xl p-6 w-96 border border-gray-700">
+                        <h2 className="text-xl font-bold mb-6">VAD 설정</h2>
+
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium mb-2">
+                                    음성 감지 임계값: {volumeThreshold}dB
+                                </label>
+                                <input
+                                    type="range"
+                                    min="-60"
+                                    max="-10"
+                                    value={volumeThreshold}
+                                    onChange={(e) => setVolumeThreshold(Number(e.target.value))}
+                                    className="w-full"
+                                />
+                                <p className="text-xs text-gray-400 mt-1">
+                                    현재 음량: {currentVolume.toFixed(0)}dB
+                                    {currentVolume > volumeThreshold ? ' (감지됨 🔴)' : ' (미감지 ⚪)'}
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-2">
+                                    침묵 대기 시간: {(silenceDuration / 1000).toFixed(1)}초
+                                </label>
+                                <input
+                                    type="range"
+                                    min="1000"
+                                    max="5000"
+                                    step="500"
+                                    value={silenceDuration}
+                                    onChange={(e) => setSilenceDuration(Number(e.target.value))}
+                                    className="w-full"
+                                />
+                                <p className="text-xs text-gray-400 mt-1">
+                                    말을 멈춘 후 녹음 종료까지 대기 시간
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex space-x-3 mt-6">
+                            <button
+                                onClick={() => {
+                                    vadService.setVolumeThreshold(volumeThreshold);
+                                    vadService.setSilenceThreshold(silenceDuration);
+                                    setShowSettings(false);
+                                    showToast(`설정 적용: ${volumeThreshold}dB, ${silenceDuration / 1000}초`);
+                                }}
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium"
+                            >
+                                적용
+                            </button>
+                            <button
+                                onClick={() => setShowSettings(false)}
+                                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg font-medium"
+                            >
+                                취소
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -9,13 +9,17 @@ class VADService {
 
         // Configuration
         this.silenceThreshold = 2000; // 2 seconds
-        this.volumeThreshold = -50; // dB
+        this.volumeThreshold = -20; // dB
         this.checkInterval = 100; // ms
+        this.minVoiceDuration = 800; // ms - minimum duration to filter keyboard typing
 
         // Callbacks
         this.onVoiceStart = null;
         this.onVoiceEnd = null;
         this.onVolumeChange = null;
+
+        // Tracking
+        this.voiceStartTime = null;
     }
 
     async startMonitoring(stream) {
@@ -30,7 +34,7 @@ class VADService {
             source.connect(this.analyser);
 
             this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.8;
+            this.analyser.smoothingTimeConstant = 0.8; // Moderate smoothing
 
             this.isMonitoring = true;
             this.monitorVolume();
@@ -50,11 +54,14 @@ class VADService {
         const dataArray = new Uint8Array(bufferLength);
         this.analyser.getByteFrequencyData(dataArray);
 
-        // Calculate average volume
-        const sum = dataArray.reduce((a, b) => a + b, 0);
+        // Simple average calculation
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+        }
         const average = sum / bufferLength;
 
-        // Convert to dB (approximation)
+        // Convert to dB
         const volume = average > 0 ? 20 * Math.log10(average / 255) : -100;
 
         // Emit volume change
@@ -67,8 +74,9 @@ class VADService {
 
         if (isCurrentlySpeaking && !this.isSpeaking) {
             // Voice started
-            console.log('🗣️ Voice detected! Volume:', volume.toFixed(2) + 'dB');
+            console.log('🗣️ Voice detected! Volume:', volume.toFixed(2) + 'dB', 'Threshold:', this.volumeThreshold + 'dB');
             this.isSpeaking = true;
+            this.voiceStartTime = Date.now();
 
             // Clear silence timer
             if (this.silenceTimer) {
@@ -82,20 +90,29 @@ class VADService {
         } else if (!isCurrentlySpeaking && this.isSpeaking) {
             // Potential silence - start timer
             if (!this.silenceTimer) {
-                console.log('🔇 Silence detected, waiting', this.silenceThreshold / 1000, 'seconds...');
+                console.log('🔇 Silence detected! Volume:', volume.toFixed(2) + 'dB', '< Threshold:', this.volumeThreshold + 'dB', '| Waiting', this.silenceThreshold / 1000, 'seconds...');
                 this.silenceTimer = setTimeout(() => {
-                    console.log('⏹️ Confirmed silence - voice ended');
+                    const voiceDuration = Date.now() - this.voiceStartTime;
+                    console.log('⏹️ Voice duration:', voiceDuration, 'ms | Min required:', this.minVoiceDuration, 'ms');
+
                     this.isSpeaking = false;
                     this.silenceTimer = null;
 
-                    if (this.onVoiceEnd) {
-                        this.onVoiceEnd();
+                    // Only trigger onVoiceEnd if voice was long enough
+                    if (voiceDuration >= this.minVoiceDuration) {
+                        console.log('✅ Confirmed silence - voice ended');
+                        if (this.onVoiceEnd) {
+                            this.onVoiceEnd();
+                        }
+                    } else {
+                        console.log('⚠️ Voice too short, ignoring (likely non-voice sound)');
                     }
                 }, this.silenceThreshold);
             }
         } else if (isCurrentlySpeaking && this.isSpeaking) {
             // Still speaking - reset silence timer
             if (this.silenceTimer) {
+                console.log('🔄 Voice continues, canceling silence timer. Volume:', volume.toFixed(2) + 'dB');
                 clearTimeout(this.silenceTimer);
                 this.silenceTimer = null;
             }

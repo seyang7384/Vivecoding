@@ -119,7 +119,7 @@ class WhisperService {
             formData.append('file', audioFile);
             formData.append('model', 'whisper-1');
             formData.append('language', 'ko'); // Korean
-            formData.append('prompt', this.medicalHints); // Medical terminology hints
+            // Note: Medical hints removed to prevent false positives from non-voice sounds
 
             const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
                 method: 'POST',

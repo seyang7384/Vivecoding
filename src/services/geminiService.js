@@ -26,14 +26,15 @@ class GeminiService {
         try {
             // Get patient names for context
             const patientNames = await this.getPatientNames();
-            const patientContext = patientNames.length > 0 
-                ? `\n[실제 환자 명단]\n${patientNames.join(', ')}\n` 
+            const patientContext = patientNames.length > 0
+                ? `\n[실제 환자 명단]\n${patientNames.join(', ')}\n`
                 : '';
 
             const systemPrompt = `
             너는 '세양한의원'의 스마트 진료 기록 비서야.
             사용자가 말하는 음성 텍스트는 발음이 부정확할 수 있어. 
             ${patientContext}
+            
             [너의 임무]
             너의 방대한 **한의학 지식(본초, 경혈, 사상체질)**과 **병원 업무 센스**를 발휘해서 오타를 완벽하게 교정해.
 
