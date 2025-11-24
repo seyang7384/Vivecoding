@@ -1,189 +1,192 @@
 import React, { useState, useEffect, useRef } from 'react';
-import RoleSelector from '../components/voice/RoleSelector';
-import { Mic, MicOff, Settings, LogOut, Monitor, Bell, Loader, Activity } from 'lucide-react';
-import { whisperService } from '../services/whisperService';
+import { Mic, MicOff, Settings, LogOut, Monitor, Bell, Activity, Stethoscope, Syringe, UserCog, FlaskConical, Laptop, ArrowDown } from 'lucide-react';
+import pythonVoiceService from '../services/pythonVoiceService';
 import { geminiService } from '../services/geminiService';
-import { vadService } from '../services/vadService';
+import { voiceLogService } from '../services/voiceLogService';
+import { getStationConfig, setStationId, STATION_CONFIG } from '../config/stationConfig';
+
+// Independent Log Column Component
+const LogColumn = React.memo(({ roleId, title, icon: Icon, colorClass, bgClass, logs, isRecording, station, vadStatus }) => {
+    const [isAutoScroll, setIsAutoScroll] = useState(true);
+    const [showScrollBtn, setShowScrollBtn] = useState(false);
+    const containerRef = useRef(null);
+    const lastLogIdRef = useRef(null);
+
+    // Filter logs for this column
+    const columnLogs = logs.filter(l => l.roleId === roleId);
+    const lastLog = columnLogs[columnLogs.length - 1];
+
+    // Auto-scroll effect
+    useEffect(() => {
+        if (isAutoScroll && lastLog && lastLog.id !== lastLogIdRef.current) {
+            lastLogIdRef.current = lastLog.id;
+            scrollToBottom();
+        }
+    }, [lastLog, isAutoScroll]);
+
+    const handleScroll = (e) => {
+        const { scrollTop, scrollHeight, clientHeight } = e.target;
+        // Check if user is near bottom (within 20px)
+        const isBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 20;
+
+        if (isBottom) {
+            setIsAutoScroll(true);
+            setShowScrollBtn(false);
+        } else {
+            setIsAutoScroll(false);
+            setShowScrollBtn(true);
+        }
+    };
+
+    const scrollToBottom = () => {
+        if (containerRef.current) {
+            containerRef.current.scrollTop = containerRef.current.scrollHeight;
+            setIsAutoScroll(true);
+            setShowScrollBtn(false);
+        }
+    };
+
+    return (
+        <div className={`flex-1 flex flex-col border-r border-gray-700 ${bgClass} relative`}>
+            <div className={`p-3 border-b border-gray-700 flex items-center justify-between ${colorClass} bg-opacity-20`}>
+                <h2 className="font-bold flex items-center text-sm">
+                    <Icon className="w-4 h-4 mr-2" />
+                    {title}
+                </h2>
+                {isRecording && station.roles.left.id === roleId && (
+                    <div className={`w-2 h-2 rounded-full ${vadStatus === 'speech_start' ? 'bg-green-500 animate-ping' : 'bg-red-500 animate-pulse'}`} />
+                )}
+                {isRecording && station.roles.right.id === roleId && (
+                    <div className={`w-2 h-2 rounded-full ${vadStatus === 'speech_start' ? 'bg-green-500 animate-ping' : 'bg-red-500 animate-pulse'}`} />
+                )}
+            </div>
+
+            <div
+                className="flex-1 p-3 overflow-y-auto space-y-3 scrollbar-hide"
+                onScroll={handleScroll}
+                ref={containerRef}
+            >
+                {columnLogs.map(log => (
+                    <div key={log.id} className={`p-3 rounded-lg border ${colorClass} border-opacity-30 bg-opacity-10`}>
+                        <p className="text-xs text-gray-400 mb-1">
+                            {new Date(log.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </p>
+                        <p className="text-gray-200 text-sm">{log.text}</p>
+                    </div>
+                ))}
+            </div>
+
+            {/* Scroll Button for this column */}
+            {showScrollBtn && (
+                <button
+                    onClick={scrollToBottom}
+                    className="absolute bottom-4 right-4 bg-gray-800 text-white p-2 rounded-full shadow-lg border border-gray-600 hover:bg-gray-700 animate-bounce z-10"
+                >
+                    <ArrowDown className="w-4 h-4" />
+                </button>
+            )}
+        </div>
+    );
+});
 
 const VoiceHQ = () => {
-    const [selectedRole, setSelectedRole] = useState(null);
+    const [station, setStation] = useState(getStationConfig());
     const [isRecording, setIsRecording] = useState(false);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [processingStage, setProcessingStage] = useState('');
+    const [isVadMode, setIsVadMode] = useState(false);
+    const [vadStatus, setVadStatus] = useState('idle');
+    const [audioLevel, setAudioLevel] = useState(0); // Audio Level (0-100)
     const [logs, setLogs] = useState([]);
-    const [processingText, setProcessingText] = useState('');
     const [summary, setSummary] = useState({ treatment: [], reservation: [], etc: [] });
     const [toast, setToast] = useState(null);
-    const logsEndRef = useRef(null);
+    const [showStationSettings, setShowStationSettings] = useState(false);
 
-    // Always-on VAD states
-    const [isListening, setIsListening] = useState(false);
-    const [currentVolume, setCurrentVolume] = useState(-100);
-    const [vadEnabled, setVadEnabled] = useState(true);
-    const [showSettings, setShowSettings] = useState(false);
-    const [volumeThreshold, setVolumeThreshold] = useState(-20);
-    const [silenceDuration, setSilenceDuration] = useState(2000);
-
-    // Refs to avoid closure issues in VAD callbacks
-    const isRecordingRef = useRef(false);
-    const isProcessingRef = useRef(false);
-
-    // Load logs and poll for updates
+    // Subscribe to logs
     useEffect(() => {
-        const loadLogs = () => {
-            const storedLogs = JSON.parse(localStorage.getItem('voice_logs') || '[]');
-            setLogs(storedLogs);
-        };
-
-        loadLogs();
-        const interval = setInterval(loadLogs, 1000);
-        return () => clearInterval(interval);
+        const unsubscribe = voiceLogService.subscribeLogs((newLogs) => {
+            setLogs(newLogs);
+        });
+        return () => unsubscribe();
     }, []);
 
     // Analyze logs
     useEffect(() => {
         const analyze = async () => {
             if (logs.length === 0) return;
-
-            const newSummary = await geminiService.analyzeLogs(logs);
+            const recentLogs = logs.slice(-20);
+            const newSummary = await geminiService.analyzeLogs(recentLogs);
             if (newSummary) {
-                const prevTotal = summary.treatment.length + summary.reservation.length + summary.etc.length;
-                const newTotal = newSummary.treatment.length + newSummary.reservation.length + newSummary.etc.length;
-
-                if (newTotal !== prevTotal) {
-                    setSummary(newSummary);
-                    showToast('상황판이 업데이트되었습니다.');
-                } else {
-                    setSummary(newSummary);
-                }
+                setSummary(newSummary);
             }
         };
-
-        const interval = setInterval(analyze, 5000);
+        const interval = setInterval(analyze, 10000);
         return () => clearInterval(interval);
     }, [logs]);
 
-    // Auto-scroll to bottom
+    // Connect to Python service on mount
     useEffect(() => {
-        logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [logs, processingText]);
-
-    // Initialize always-on VAD when role is selected
-    useEffect(() => {
-        if (!selectedRole || !vadEnabled) return;
-
-        const initializeVAD = async () => {
-            try {
-                console.log('🎙️ Initializing always-on voice detection...');
-
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        sampleRate: 44100
-                    }
-                });
-
-                await vadService.startMonitoring(stream);
-
-                // Apply user settings
-                vadService.setVolumeThreshold(volumeThreshold);
-                vadService.setSilenceThreshold(silenceDuration);
-
-                setIsListening(true);
-
-                vadService.setCallbacks({
-                    onVoiceStart: () => handleVoiceStart(),
-                    onVoiceEnd: () => handleVoiceEnd(),
-                    onVolumeChange: (volume) => setCurrentVolume(volume)
-                });
-
-                showToast('🎙️ 음성 감지 활성화 - 말씀하시면 자동 녹음됩니다');
-
-            } catch (error) {
-                console.error('❌ Failed to initialize VAD:', error);
-                showToast('마이크 권한이 필요합니다');
+        pythonVoiceService.connect({
+            onConnect: () => {
+                console.log('Connected to Python Voice Bridge');
+            },
+            onTranscript: (msg) => {
+                // msg = {type: 'transcript', speaker: 'Doctor'/'Nurse', text: '...'}
+                const roleConfig = msg.speaker === 'Doctor' ? station.roles.left : station.roles.right;
+                handleTranscript(roleConfig, msg.text);
+            },
+            onAudioLevel: (level) => {
+                // level is 0-1, convert to 0-100
+                setAudioLevel(Math.min(100, level * 100));
+            },
+            onVadStatus: (status) => {
+                setVadStatus(status);
+            },
+            onError: (error) => {
+                console.error('Python Service Error:', error);
+                showToast('오류 발생: ' + error.message);
+                setIsRecording(false);
+            },
+            onDisconnect: () => {
+                console.log('Disconnected from Python Voice Bridge');
+                setIsRecording(false);
             }
-        };
-
-        initializeVAD();
+        });
 
         return () => {
-            vadService.stopMonitoring();
-            setIsListening(false);
+            pythonVoiceService.disconnect();
         };
-    }, [selectedRole, vadEnabled]);
+    }, [station]);
 
-    const handleVoiceStart = async () => {
-        if (isRecordingRef.current || isProcessingRef.current) {
-            console.log('⚠️ Already recording or processing, ignoring voice start');
-            return;
-        }
-
-        console.log('🎤 Voice started - beginning recording...');
-        try {
-            await whisperService.startRecording();
-            setIsRecording(true);
-            isRecordingRef.current = true;
-        } catch (error) {
-            console.error('Failed to start recording:', error);
-        }
-    };
-
-    const handleVoiceEnd = async () => {
-        console.log('🔔 handleVoiceEnd called. isRecording:', isRecordingRef.current);
-        if (!isRecordingRef.current) {
-            console.log('⚠️ Not recording, ignoring voice end');
-            return;
-        }
-
-        console.log('⏹️ Voice ended - processing recording...');
-        await processRecording();
-    };
-
-    const processRecording = async () => {
-        try {
+    const toggleRecording = () => {
+        if (isRecording) {
+            pythonVoiceService.stop();
             setIsRecording(false);
-            isRecordingRef.current = false;
-            setIsProcessing(true);
-            isProcessingRef.current = true;
-            setProcessingStage('whisper');
-            setProcessingText('');
-
-            const audioBlob = await whisperService.stopRecording();
-            const rawText = await whisperService.transcribe(audioBlob);
-
-            if (!rawText || rawText.trim() === '') {
-                throw new Error('음성이 인식되지 않았습니다.');
-            }
-
-            setProcessingText(rawText);
-            setProcessingStage('gemini');
-
-            let finalText = rawText;
-            try {
-                const correctedText = await geminiService.correctText(rawText);
-                if (correctedText && correctedText.trim()) {
-                    finalText = correctedText;
-                }
-            } catch (error) {
-                console.warn('⚠️ GPT-4 correction failed:', error.message);
-            }
-
-            addLog(finalText);
-
-            setProcessingStage('complete');
-            setProcessingText('');
-
-        } catch (error) {
-            console.error('Recording/Processing error:', error);
-            showToast('오류: ' + error.message);
-            whisperService.cancelRecording();
-        } finally {
-            setIsProcessing(false);
-            isProcessingRef.current = false;
-            setProcessingStage('');
+            setVadStatus('idle');
+            setAudioLevel(0);
+            showToast('녹음이 종료되었습니다.');
+        } else {
+            pythonVoiceService.start();
+            setIsRecording(true);
+            showToast(`🎙️ ${station.name} 녹음 시작`);
         }
+    };
+
+    const handleTranscript = (roleConfig, text) => {
+        if (!text || text.trim() === '') return;
+        debouncedSaveLog(roleConfig, text);
+    };
+
+    const saveLogRef = useRef({});
+    const debouncedSaveLog = (roleConfig, text) => {
+        if (saveLogRef.current[roleConfig.id]) clearTimeout(saveLogRef.current[roleConfig.id]);
+
+        saveLogRef.current[roleConfig.id] = setTimeout(() => {
+            voiceLogService.addLog({
+                roleId: roleConfig.id,
+                roleName: roleConfig.name,
+                text: text,
+                stationId: station.id
+            });
+        }, 1000);
     };
 
     const showToast = (message) => {
@@ -191,320 +194,225 @@ const VoiceHQ = () => {
         setTimeout(() => setToast(null), 3000);
     };
 
-    const addLog = (text) => {
-        const newLog = {
-            id: Date.now(),
-            roleId: selectedRole.id,
-            roleName: selectedRole.name,
-            text: text,
-            timestamp: Date.now()
-        };
-
-        const existingLogs = JSON.parse(localStorage.getItem('voice_logs') || '[]');
-        const updatedLogs = [...existingLogs, newLog];
-        if (updatedLogs.length > 50) updatedLogs.shift();
-
-        localStorage.setItem('voice_logs', JSON.stringify(updatedLogs));
-        setLogs(updatedLogs);
-    };
-
-    const handleRoleSelect = (role) => {
-        setSelectedRole(role);
-    };
-
-    const handleLogout = () => {
-        vadService.stopMonitoring();
-        if (isRecording) {
-            whisperService.cancelRecording();
-        }
-        setSelectedRole(null);
-        setIsRecording(false);
-        setIsListening(false);
-    };
-
-    const formatTime = (timestamp) => {
-        return new Date(timestamp).toLocaleTimeString('ko-KR', {
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
-
-    const renderBoldText = (text) => {
-        const parts = text.split(/(\*\*[^*]+\*\*)/g);
-        return parts.map((part, index) => {
-            if (part.startsWith('**') && part.endsWith('**')) {
-                return <strong key={index}>{part.slice(2, -2)}</strong>;
-            }
-            return <span key={index}>{part}</span>;
-        });
-    };
-
-    if (!selectedRole) {
-        return <RoleSelector onSelectRole={handleRoleSelect} />;
-    }
-
     return (
         <div className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden relative">
             {toast && (
-                <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center animate-bounce-in transition-all duration-300">
+                <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg z-50 flex items-center animate-bounce-in">
                     <Bell className="w-5 h-5 mr-2" />
                     {toast}
                 </div>
             )}
 
-            <header className="h-16 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-6">
+            {/* Header */}
+            <header className="h-14 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4">
                 <div className="flex items-center space-x-4">
-                    <h1 className="text-xl font-bold">Smart Medical Voice HQ</h1>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${selectedRole.id === 'D' ? 'bg-orange-900 text-orange-100' : 'bg-blue-900 text-blue-100'
-                        }`}>
-                        {selectedRole.name}
-                    </span>
+                    <h1 className="text-lg font-bold flex items-center">
+                        <Activity className="w-5 h-5 mr-2 text-blue-400" />
+                        Smart Medical Voice HQ
+                    </h1>
+                    <button
+                        onClick={() => setShowStationSettings(true)}
+                        className="px-3 py-1 rounded-full text-xs font-medium bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600 flex items-center"
+                    >
+                        <Laptop className="w-3 h-3 mr-1" />
+                        {station.name}
+                    </button>
                 </div>
                 <div className="flex items-center space-x-4">
-                    <button onClick={handleLogout} className="p-2 hover:bg-gray-700 rounded-full text-gray-400 hover:text-white">
-                        <LogOut className="w-5 h-5" />
+                    {/* Audio Level Meter */}
+                    <div className={`flex items-center space-x-2 px-3 py-1 rounded-full border transition-all ${isRecording ? 'bg-gray-800 border-gray-700' : 'bg-gray-800/50 border-gray-800 opacity-50'}`}>
+                        <div className="text-xs text-gray-400">MIC</div>
+                        <div className="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
+                            <div
+                                className={`h-full transition-all duration-100 ${audioLevel > 40 ? 'bg-red-500' : 'bg-green-500'}`}
+                                style={{ width: `${audioLevel}%` }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* VAD Toggle */}
+                    <div className="flex items-center bg-gray-700 rounded-full p-1">
+                        <button
+                            onClick={() => !isRecording && setIsVadMode(false)}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${!isVadMode ? 'bg-blue-600 text-white' : 'text-gray-400'}`}
+                            disabled={isRecording}
+                        >
+                            수동
+                        </button>
+                        <button
+                            onClick={() => !isRecording && setIsVadMode(true)}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${isVadMode ? 'bg-green-600 text-white' : 'text-gray-400'}`}
+                            disabled={isRecording}
+                        >
+                            자동(VAD)
+                        </button>
+                    </div>
+
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="p-2 hover:bg-gray-700 rounded-full text-gray-400"
+                    >
+                        <LogOut className="w-4 h-4" />
                     </button>
                 </div>
             </header>
 
+            {/* Main Content */}
             <div className="flex-1 flex overflow-hidden">
-                <div className="flex-1 flex flex-col border-r border-gray-700">
-                    <div className="flex-1 p-6 overflow-y-auto space-y-4">
-                        {logs.length === 0 && !processingText && (
-                            <div className="text-center text-gray-500 mt-20">
-                                <p>대화 내용이 없습니다.</p>
-                                <p className="text-sm">말씀하시면 자동으로 녹음됩니다.</p>
-                            </div>
-                        )}
 
-                        {logs.map((log) => (
-                            <div key={log.id} className="flex items-start space-x-3 animate-fade-in">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${log.roleId === 'A' ? 'bg-blue-600' :
-                                    log.roleId === 'B' ? 'bg-green-600' :
-                                        log.roleId === 'C' ? 'bg-purple-600' : 'bg-orange-600'
-                                    }`}>
-                                    {log.roleId}
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-400 mb-1">{log.roleName} ({formatTime(log.timestamp)})</p>
-                                    <p className="bg-gray-800 p-3 rounded-lg rounded-tl-none text-lg leading-relaxed">
-                                        {renderBoldText(log.text)}
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
-
-                        {isProcessing && (
-                            <div className="flex items-start space-x-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${selectedRole.id === 'A' ? 'bg-blue-600' :
-                                    selectedRole.id === 'B' ? 'bg-green-600' :
-                                        selectedRole.id === 'C' ? 'bg-purple-600' : 'bg-orange-600'
-                                    }`}>
-                                    {selectedRole.id}
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-400 mb-1 flex items-center">
-                                        <Loader className="w-4 h-4 mr-1 animate-spin" />
-                                        {processingStage === 'whisper' && 'AI가 음성을 인식하는 중'}
-                                        {processingStage === 'gemini' && 'AI가 기록을 정리하는 중'}
-                                        <span className="animate-pulse">...</span>
-                                    </p>
-                                    {processingText && (
-                                        <p className="bg-gray-800 p-3 rounded-lg rounded-tl-none text-lg text-gray-400 italic border border-dashed border-gray-600">
-                                            {processingText}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                        <div ref={logsEndRef} />
+                {/* 4-Split View */}
+                <div className="flex-1 flex flex-col">
+                    <div className="flex-1 flex border-b border-gray-700 overflow-hidden">
+                        <LogColumn
+                            roleId="Doctor"
+                            title="원장님 (PC A-L)"
+                            icon={Stethoscope}
+                            colorClass="text-blue-400 border-blue-500 bg-blue-900"
+                            bgClass="bg-gray-900/50"
+                            logs={logs}
+                            isRecording={isRecording}
+                            station={station}
+                            vadStatus={vadStatus}
+                        />
+                        <LogColumn
+                            roleId="Nurse"
+                            title="치료실 (PC A-R)"
+                            icon={Syringe}
+                            colorClass="text-green-400 border-green-500 bg-green-900"
+                            bgClass="bg-gray-900/30"
+                            logs={logs}
+                            isRecording={isRecording}
+                            station={station}
+                            vadStatus={vadStatus}
+                        />
                     </div>
-
-                    <div className="h-24 bg-gray-800 border-t border-gray-700 flex items-center justify-center p-4">
-                        <div className="flex items-center space-x-6 w-full max-w-2xl">
-                            <div className={`flex items-center space-x-3 flex-1 ${isRecording ? 'text-red-400' :
-                                isProcessing ? 'text-yellow-400' :
-                                    isListening ? 'text-green-400' : 'text-gray-500'
-                                }`}>
-                                <div className="relative">
-                                    {isRecording ? (
-                                        <Mic className="w-8 h-8 animate-pulse" />
-                                    ) : isProcessing ? (
-                                        <Loader className="w-8 h-8 animate-spin" />
-                                    ) : isListening ? (
-                                        <Activity className="w-8 h-8" />
-                                    ) : (
-                                        <MicOff className="w-8 h-8" />
-                                    )}
-                                </div>
-
-                                <div className="flex-1">
-                                    <p className="text-sm font-medium">
-                                        {isRecording ? '🎙️ 녹음 중...' :
-                                            isProcessing ? '⚡ AI 처리 중...' :
-                                                isListening ? '👂 음성 감지 대기 중' :
-                                                    '❌ 비활성화'}
-                                    </p>
-                                    <p className="text-xs text-gray-400">
-                                        {isListening && !isRecording && !isProcessing &&
-                                            '말씀하시면 자동으로 녹음이 시작됩니다'}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {isListening && (
-                                <div className="flex items-center space-x-2">
-                                    <span className="text-xs text-gray-400">음량:</span>
-                                    <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
-                                        <div
-                                            className={`h-full transition-all duration-100 ${currentVolume > -40 ? 'bg-green-500' :
-                                                currentVolume > -60 ? 'bg-yellow-500' :
-                                                    'bg-gray-600'
-                                                }`}
-                                            style={{
-                                                width: `${Math.max(0, Math.min(100, ((currentVolume + 100) / 100) * 100))}%`
-                                            }}
-                                        />
-                                    </div>
-                                    <span className="text-xs text-gray-400 w-12">
-                                        {currentVolume.toFixed(0)}dB
-                                    </span>
-                                </div>
-                            )}
-
-                            <button
-                                onClick={() => setShowSettings(true)}
-                                className="p-2 hover:bg-gray-700 rounded-full text-gray-400 hover:text-white"
-                                title="VAD 설정"
-                            >
-                                <Settings className="w-5 h-5" />
-                            </button>
-                        </div>
+                    <div className="flex-1 flex overflow-hidden">
+                        <LogColumn
+                            roleId="Manager"
+                            title="실장님 (PC B-L)"
+                            icon={UserCog}
+                            colorClass="text-purple-400 border-purple-500 bg-purple-900"
+                            bgClass="bg-gray-900/30"
+                            logs={logs}
+                            isRecording={isRecording}
+                            station={station}
+                            vadStatus={vadStatus}
+                        />
+                        <LogColumn
+                            roleId="Pharmacy"
+                            title="탕전실 (PC B-R)"
+                            icon={FlaskConical}
+                            colorClass="text-orange-400 border-orange-500 bg-orange-900"
+                            bgClass="bg-gray-900/50"
+                            logs={logs}
+                            isRecording={isRecording}
+                            station={station}
+                            vadStatus={vadStatus}
+                        />
                     </div>
                 </div>
 
-                <div className="w-96 bg-gray-800 flex flex-col border-l border-gray-700">
-                    <div className="p-4 border-b border-gray-700">
-                        <h2 className="font-bold text-lg flex items-center">
-                            <Monitor className="w-5 h-5 mr-2 text-blue-400" />
-                            현재 상황 요약판
+                {/* Summary Panel */}
+                <div className="w-72 bg-gray-800 flex flex-col border-l border-gray-700">
+                    <div className="p-3 border-b border-gray-700">
+                        <h2 className="font-bold text-sm flex items-center">
+                            <Monitor className="w-4 h-4 mr-2 text-purple-400" />
+                            실시간 분석
                         </h2>
                     </div>
-                    <div className="flex-1 p-4 space-y-6 overflow-y-auto">
-                        <div className="bg-gray-900 rounded-xl p-4 border border-gray-700">
-                            <h3 className="text-blue-400 font-bold mb-3 text-sm uppercase tracking-wider">치료 흐름</h3>
-                            <ul className="space-y-2">
-                                {summary.treatment.length === 0 ? (
-                                    <li className="text-gray-500 text-sm">데이터 없음</li>
-                                ) : (
-                                    summary.treatment.map(item => (
-                                        <li key={item.id} className="flex items-center text-gray-300 animate-fade-in">
-                                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                                            {item.text}
-                                        </li>
-                                    ))
-                                )}
+                    <div className="flex-1 p-3 space-y-4 overflow-y-auto">
+                        <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+                            <h3 className="text-blue-400 font-bold mb-2 text-xs uppercase">치료 흐름</h3>
+                            <ul className="space-y-1 text-xs">
+                                {summary.treatment.map((item, i) => (
+                                    <li key={i} className="flex items-start text-gray-300">
+                                        <span className="w-1 h-1 bg-blue-500 rounded-full mr-2 mt-1.5"></span>
+                                        {item.text}
+                                    </li>
+                                ))}
                             </ul>
                         </div>
+                        <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+                            <h3 className="text-green-400 font-bold mb-2 text-xs uppercase">오더 / 처방</h3>
+                            <ul className="space-y-1 text-xs">
+                                {summary.etc.map((item, i) => (
+                                    <li key={i} className="flex items-start text-gray-300">
+                                        <span className="w-1 h-1 bg-green-500 rounded-full mr-2 mt-1.5"></span>
+                                        {item.text}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
 
-                        <div className="bg-gray-900 rounded-xl p-4 border border-gray-700">
-                            <h3 className="text-green-400 font-bold mb-3 text-sm uppercase tracking-wider">예약 / 수납</h3>
-                            <ul className="space-y-2">
-                                {summary.reservation.length === 0 ? (
-                                    <li className="text-gray-500 text-sm">데이터 없음</li>
-                                ) : (
-                                    summary.reservation.map(item => (
-                                        <li key={item.id} className="flex items-center text-gray-300 animate-fade-in">
-                                            <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                                            {item.text}
-                                        </li>
-                                    ))
-                                )}
-                            </ul>
-                        </div>
-
-                        <div className="bg-gray-900 rounded-xl p-4 border border-gray-700">
-                            <h3 className="text-purple-400 font-bold mb-3 text-sm uppercase tracking-wider">기타 / 오더</h3>
-                            <ul className="space-y-2">
-                                {summary.etc.length === 0 ? (
-                                    <li className="text-gray-500 text-sm">데이터 없음</li>
-                                ) : (
-                                    summary.etc.map(item => (
-                                        <li key={item.id} className="flex items-center text-gray-300 animate-fade-in">
-                                            <span className="w-2 h-2 bg-orange-500 rounded-full mr-2"></span>
-                                            {item.text}
-                                        </li>
-                                    ))
-                                )}
-                            </ul>
-                        </div>
+                    {/* Control Bar */}
+                    <div className="p-4 border-t border-gray-700 bg-gray-800">
+                        <button
+                            onClick={toggleRecording}
+                            className={`w-full py-3 rounded-lg font-bold text-sm flex items-center justify-center transition-all ${isRecording
+                                ? (isVadMode ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700')
+                                : 'bg-blue-600 hover:bg-blue-700'
+                                } text-white shadow-lg`}
+                        >
+                            {isRecording ? (
+                                <>
+                                    {isVadMode ? <Activity className="w-4 h-4 mr-2 animate-pulse" /> : <MicOff className="w-4 h-4 mr-2" />}
+                                    {isVadMode ? (vadStatus === 'speech_start' ? '음성 감지됨 (녹음 중)' : '음성 대기 중...') : '녹음 종료'}
+                                </>
+                            ) : (
+                                <>
+                                    <Mic className="w-4 h-4 mr-2" />
+                                    {station.name} 녹음 시작
+                                </>
+                            )}
+                        </button>
+                        <p className="text-[10px] text-gray-500 text-center mt-2">
+                            {isVadMode ? '* 자동 모드: 소리가 들릴 때만 녹음합니다.' : '* 수동 모드: 버튼을 눌러 녹음을 제어합니다.'}
+                        </p>
                     </div>
                 </div>
             </div>
 
-            {/* Settings Modal */}
-            {showSettings && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-gray-800 rounded-xl p-6 w-96 border border-gray-700">
-                        <h2 className="text-xl font-bold mb-6">VAD 설정</h2>
+            {/* Station Settings Modal */}
+            {showStationSettings && (
+                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+                    <div className="bg-gray-800 rounded-xl p-6 w-96 border border-gray-700 shadow-2xl">
+                        <h2 className="text-lg font-bold mb-4 flex items-center">
+                            <Laptop className="w-5 h-5 mr-2 text-blue-400" />
+                            PC 역할 설정
+                        </h2>
+                        <p className="text-sm text-gray-400 mb-6">
+                            현재 PC가 담당할 역할을 선택해주세요.<br />
+                            선택된 역할에 따라 마이크 입력이 태깅됩니다.
+                        </p>
 
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium mb-2">
-                                    음성 감지 임계값: {volumeThreshold}dB
-                                </label>
-                                <input
-                                    type="range"
-                                    min="-60"
-                                    max="-10"
-                                    value={volumeThreshold}
-                                    onChange={(e) => setVolumeThreshold(Number(e.target.value))}
-                                    className="w-full"
-                                />
-                                <p className="text-xs text-gray-400 mt-1">
-                                    현재 음량: {currentVolume.toFixed(0)}dB
-                                    {currentVolume > volumeThreshold ? ' (감지됨 🔴)' : ' (미감지 ⚪)'}
-                                </p>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium mb-2">
-                                    침묵 대기 시간: {(silenceDuration / 1000).toFixed(1)}초
-                                </label>
-                                <input
-                                    type="range"
-                                    min="1000"
-                                    max="5000"
-                                    step="500"
-                                    value={silenceDuration}
-                                    onChange={(e) => setSilenceDuration(Number(e.target.value))}
-                                    className="w-full"
-                                />
-                                <p className="text-xs text-gray-400 mt-1">
-                                    말을 멈춘 후 녹음 종료까지 대기 시간
-                                </p>
-                            </div>
+                        <div className="space-y-3">
+                            {Object.values(STATION_CONFIG).map((config) => (
+                                <button
+                                    key={config.id}
+                                    onClick={() => setStationId(config.id)}
+                                    className={`w-full p-4 rounded-lg border flex items-center justify-between transition-all ${station.id === config.id
+                                        ? 'bg-blue-600 border-blue-500 text-white'
+                                        : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+                                        }`}
+                                >
+                                    <div className="text-left">
+                                        <div className="font-bold">{config.name}</div>
+                                        <div className="text-xs opacity-80 mt-1">
+                                            L: {config.roles.left.name} / R: {config.roles.right.name}
+                                        </div>
+                                    </div>
+                                    {station.id === config.id && <div className="w-3 h-3 bg-white rounded-full" />}
+                                </button>
+                            ))}
                         </div>
 
-                        <div className="flex space-x-3 mt-6">
-                            <button
-                                onClick={() => {
-                                    vadService.setVolumeThreshold(volumeThreshold);
-                                    vadService.setSilenceThreshold(silenceDuration);
-                                    setShowSettings(false);
-                                    showToast(`설정 적용: ${volumeThreshold}dB, ${silenceDuration / 1000}초`);
-                                }}
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium"
-                            >
-                                적용
-                            </button>
-                            <button
-                                onClick={() => setShowSettings(false)}
-                                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg font-medium"
-                            >
-                                취소
-                            </button>
-                        </div>
+                        <button
+                            onClick={() => setShowStationSettings(false)}
+                            className="w-full mt-6 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm"
+                        >
+                            닫기
+                        </button>
                     </div>
                 </div>
             )}
