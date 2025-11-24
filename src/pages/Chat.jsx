@@ -3,6 +3,11 @@ import { Send, Users, User, Bell } from 'lucide-react';
 import Button from '../components/ui/Button';
 import { prescriptionService } from '../services/prescriptionService';
 import { prescriptionParserService } from '../services/prescriptionParserService';
+import { parsePrescription } from '../utils/SmartParser';
+import { inventoryService } from '../services/inventoryService';
+
+// [설정] 명칭이 모호해서 시스템이 헷갈려하는 약재 목록
+const AMBIGUOUS_HERBS = ['작약', '복령'];
 
 const Chat = () => {
     const [rooms, setRooms] = useState([]);
@@ -50,6 +55,36 @@ const Chat = () => {
     const handleSendMessage = (e) => {
         e.preventDefault();
         if (!newMessage.trim() || !selectedRoom) return;
+
+        // ============================================================
+        // 🛡️ [1단계] SmartParser로 텍스트 파싱 및 모호한 약재 검문소
+        // ============================================================
+        let parsedData = null;
+        try {
+            parsedData = parsePrescription(newMessage);
+            console.log("🔍 SmartParser Result:", parsedData);
+            console.log("📋 추출된 약재:", parsedData?.herbs);
+
+            // 모호한 약재 검출
+            if (parsedData && parsedData.herbs && parsedData.herbs.length > 0) {
+                const ambiguousItems = parsedData.herbs.filter(herb =>
+                    AMBIGUOUS_HERBS.includes(herb.name)
+                );
+
+                if (ambiguousItems.length > 0) {
+                    const names = ambiguousItems.map(item => item.name).join(', ');
+                    alert(
+                        `⚠️ 명칭이 불분명한 약재가 감지되었습니다: [${names}]\n\n` +
+                        `재고 관리를 위해 '백${names}'인지 '적${names}'인지 정확하게 구분하여 수정해주세요.\n` +
+                        `(메시지가 전송되지 않았습니다.)`
+                    );
+                    return; // ⛔️ 전송 중단
+                }
+            }
+        } catch (err) {
+            console.error("❌ SmartParser failed:", err);
+        }
+        // ============================================================
 
         // Check if message is prescription format (4 lines)
         const lines = newMessage.split('\n').filter(line => line.trim());
@@ -121,6 +156,27 @@ const Chat = () => {
 
         setMessages(updated);
         setNewMessage('');
+
+        // ============================================================
+        // 📉 [마지막 단계] 재고 차감 (약재가 파싱되었을 경우)
+        // ============================================================
+        if (parsedData && parsedData.herbs && parsedData.herbs.length > 0) {
+            updateInventory(parsedData.herbs);
+        }
+    };
+
+    // [재고 DB 수정 함수]
+    const updateInventory = async (herbsToDeduct) => {
+        try {
+            console.log("📉 재고 차감 시작:", herbsToDeduct);
+
+            for (const herb of herbsToDeduct) {
+                await inventoryService.deductInventory(herb.name, herb.amount);
+            }
+        } catch (error) {
+            console.error("재고 차감 실패:", error);
+            alert("⚠️ 재고 차감 중 오류가 발생했습니다. (메시지는 전송됨)");
+        }
     };
 
     const handleKeyDown = (e) => {
