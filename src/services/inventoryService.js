@@ -56,5 +56,27 @@ export const inventoryService = {
 
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
         return true;
+    },
+
+    // Deduct inventory stock
+    deductInventory: async (itemName, quantity) => {
+        const items = await inventoryService.getInventory();
+        const itemIndex = items.findIndex(item => item.name === itemName);
+
+        if (itemIndex === -1) {
+            console.warn(`Inventory item not found: ${itemName}`);
+            return false;
+        }
+
+        const currentStock = items[itemIndex].currentStock || 0;
+        const newStock = Math.max(0, currentStock - quantity);
+
+        items[itemIndex] = {
+            ...items[itemIndex],
+            currentStock: newStock
+        };
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+        return true;
     }
 };
