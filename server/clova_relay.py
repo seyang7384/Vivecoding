@@ -4,7 +4,7 @@ import json
 import queue
 import threading
 import time
-import struct # [추가] WAV 헤더 생성을 위해 필요
+import struct
 import requests
 from dotenv import load_dotenv
 import websockets
@@ -35,6 +35,22 @@ class ClovaRelayServer:
         self.is_recording = False
         self.audio_queue = queue.Queue()
         self.worker_thread = None
+        self.boostings = self.load_boostings()
+
+    def load_boostings(self):
+        """Load boosting keywords from file"""
+        boostings = []
+        try:
+            boosting_file = os.path.join(os.path.dirname(__file__), 'boostings.txt')
+            if os.path.exists(boosting_file):
+                with open(boosting_file, 'r', encoding='utf-8') as f:
+                    words = [line.strip() for line in f if line.strip()]
+                    if words:
+                        boostings.append({"words": ",".join(words)})
+                print(f"📚 Loaded {len(words)} boosting keywords")
+        except Exception as e:
+            print(f"⚠️ Failed to load boostings: {e}")
+        return boostings
 
     async def broadcast(self, msg_type, data):
         if self.websocket_clients:
@@ -60,13 +76,13 @@ class ClovaRelayServer:
                     params = {
                         'language': 'ko-KR',
                         'completion': 'sync',
+                        'boostings': self.boostings
                     }
                     
-                    # [핵심 수정] Raw 데이터 앞에 WAV 헤더를 붙임
+                    # Raw 데이터 앞에 WAV 헤더를 붙임
                     wav_header = create_wav_header(len(buffer))
                     wav_data = wav_header + buffer
                     
-                    # 파일명도 speech.wav로 변경하고 MIME type도 audio/wav로 명시
                     files = {
                         'media': ('speech.wav', wav_data, 'audio/wav'),
                         'params': (None, json.dumps(params), 'application/json')
@@ -78,7 +94,6 @@ class ClovaRelayServer:
                         
                         if response.status_code == 200:
                             res_json = response.json()
-                            # 결과가 FAILED인지 확인
                             if res_json.get("result") == "FAILED":
                                 print(f"❌ 서버 거부: {res_json.get('message')}")
                             else:
@@ -101,7 +116,6 @@ class ClovaRelayServer:
             except queue.Empty:
                 continue
 
-    # ... (서버 구동부 동일) ...
     async def start_recording(self, loop):
         if self.is_recording: return
         self.is_recording = True

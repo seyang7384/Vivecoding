@@ -133,3 +133,8 @@ compare_*.ps1
 upload_*.ps1
 verify_*.ps1
 fix_git.ps1
+
+# Voice Data Pipeline
+server/recordings/
+server/transcripts/
+!server/boostings.txt
