@@ -34,7 +34,7 @@ class PythonVoiceService {
         this.ws.onopen = () => {
             console.log('✅ Connected to Python Voice Bridge');
             const sampleRate = this.audioProcessor.getSampleRate();
-            console.log(`🎙️ Audio: ${sampleRate}Hz, Mono, Int16 PCM`);
+            console.log(`🎙️ Audio: ${sampleRate}Hz, Stereo (2ch), Int16 PCM`);
 
             if (this.callbacks.onConnect) this.callbacks.onConnect();
         };

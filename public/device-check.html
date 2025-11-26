@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Device Check</title>
+    <style>
+        body {
+            font-family: monospace;
+            white-space: pre;
+            padding: 20px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Audio Input Devices</h1>
+    <div id="list">Checking...</div>
+    <script>
+        async function check() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true }); // Request permission first
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const inputs = devices.filter(d => d.kind === 'audioinput');
+
+                let html = `Found ${inputs.length} audio inputs:\n\n`;
+                inputs.forEach((d, i) => {
+                    html += `${i + 1}. [${d.deviceId.substring(0, 8)}...] ${d.label}\n`;
+                });
+
+                document.getElementById('list').innerText = html;
+            } catch (e) {
+                document.getElementById('list').innerText = "Error: " + e.message;
+            }
+        }
+        check();
+    </script>
+</body>
+
+</html>

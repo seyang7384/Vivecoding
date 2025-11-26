@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>마이크 스테레오 확인</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .value {
+            color: #333;
+            font-family: 'Courier New', monospace;
+        }
+
+        .stereo-yes {
+            color: #27ae60;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .stereo-no {
+            color: #e74c3c;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .error {
+            color: #e74c3c;
+            padding: 15px;
+            background: #ffe5e5;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎤 마이크 스테레오 테스트</h1>
+        <p class="subtitle">시스템 마이크가 스테레오를 지원하는지 확인합니다</p>
+
+        <button onclick="checkMicrophone()">🔍 마이크 확인하기</button>
+
+        <div id="result" class="result">
+            <div id="resultContent"></div>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+
+    <script>
+        async function checkMicrophone() {
+            const resultDiv = document.getElementById('result');
+            const resultContent = document.getElementById('resultContent');
+            const errorDiv = document.getElementById('error');
+
+            errorDiv.style.display = 'none';
+            resultDiv.classList.remove('show');
+
+            try {
+                // Request microphone access WITH STEREO
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 2, // 🔥 명시적으로 스테레오 요청!
+                        sampleRate: 16000,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+
+                // Get audio track
+                const track = stream.getAudioTracks()[0];
+                const settings = track.getSettings();
+                const capabilities = track.getCapabilities();
+
+                console.log('Settings:', settings);
+                console.log('Capabilities:', capabilities);
+
+                // Display results
+                const channelCount = settings.channelCount || 1;
+                const isStereo = channelCount >= 2;
+
+                resultContent.innerHTML = `
+                    <div class="info-row">
+                        <span class="label">디바이스 이름:</span>
+                        <span class="value">${settings.deviceId ? '✅ 감지됨' : '❓ 알 수 없음'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">채널 수:</span>
+                        <span class="value">${channelCount} 채널</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">샘플레이트:</span>
+                        <span class="value">${settings.sampleRate || 'N/A'} Hz</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">에코 제거:</span>
+                        <span class="value">${settings.echoCancellation ? '✅' : '❌'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">노이즈 감소:</span>
+                        <span class="value">${settings.noiseSuppression ? '✅' : '❌'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">자동 게인:</span>
+                        <span class="value">${settings.autoGainControl ? '✅' : '❌'}</span>
+                    </div>
+                    <div class="info-row" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #999;">
+                        <span class="label" style="font-size: 18px;">🎯 스테레오 지원:</span>
+                        <span class="${isStereo ? 'stereo-yes' : 'stereo-no'}">
+                            ${isStereo ? '✅ 예 (스테레오)' : '❌ 아니오 (모노)'}
+                        </span>
+                    </div>
+                    ${capabilities.channelCount ? `
+                    <div class="info-row">
+                        <span class="label">지원 가능 채널:</span>
+                        <span class="value">${capabilities.channelCount.min} ~ ${capabilities.channelCount.max}</span>
+                    </div>
+                    ` : ''}
+                `;
+
+                resultDiv.classList.add('show');
+
+                // Stop the stream
+                stream.getTracks().forEach(track => track.stop());
+
+            } catch (error) {
+                console.error('Error:', error);
+                errorDiv.textContent = `오류: ${error.message}`;
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        // Auto-check on load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                document.querySelector('button').click();
+            }, 500);
+        });
+    </script>
+</body>
+
+</html>

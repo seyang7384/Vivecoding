@@ -129,8 +129,9 @@ const VoiceHQ = () => {
                 console.log('Connected to Python Voice Bridge');
             },
             onTranscript: (msg) => {
-                // msg = {type: 'transcript', speaker: 'Doctor'/'Nurse', text: '...'}
-                const roleConfig = msg.speaker === 'Doctor' ? station.roles.left : station.roles.right;
+                // msg = {type: 'transcript', speaker: 'Left'/'Right', text: '...'}
+                // Backend sends 'Left' or 'Right', map to station roles
+                const roleConfig = msg.speaker === 'Left' ? station.roles.left : station.roles.right;
                 handleTranscript(roleConfig, msg.text);
             },
             onAudioLevel: (level) => {

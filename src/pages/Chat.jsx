@@ -122,6 +122,12 @@ const Chat = () => {
                     const storageKey = `chat_messages_${selectedRoom.id}`;
                     const updated = JSON.parse(localStorage.getItem(storageKey) || '[]');
                     setMessages(updated);
+
+                    // 📉 [추가] 재고 차감 실행
+                    if (parsedData && parsedData.herbs && parsedData.herbs.length > 0) {
+                        updateInventory(parsedData.herbs);
+                    }
+
                     return;
                 } else if (result.needsRegistration) {
                     // Patient not found

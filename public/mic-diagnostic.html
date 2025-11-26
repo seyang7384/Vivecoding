@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>마이크 테스트</title>
+    <style>
+        body {
+            font-family: system-ui;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+
+        .meter {
+            width: 100%;
+            height: 30px;
+            background: #333;
+            margin: 10px 0;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4ade80, #f59e0b, #ef4444);
+            transition: width 0.1s;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            margin: 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+        }
+
+        .start {
+            background: #22c55e;
+            color: white;
+        }
+
+        .stop {
+            background: #ef4444;
+            color: white;
+        }
+
+        select {
+            padding: 10px;
+            font-size: 16px;
+            width: 100%;
+            margin: 10px 0;
+        }
+
+        .status {
+            padding: 20px;
+            background: #333;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .good {
+            color: #22c55e;
+        }
+
+        .bad {
+            color: #ef4444;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🎤 마이크 입력 테스트</h1>
+
+    <div>
+        <label>마이크 선택:</label>
+        <select id="micSelect"></select>
+    </div>
+
+    <button class="start" onclick="startTest()">테스트 시작</button>
+    <button class="stop" onclick="stopTest()">중지</button>
+
+    <div class="status">
+        <h3>Left (치료실)</h3>
+        <div class="meter">
+            <div id="meterL" class="meter-fill" style="width: 0%"></div>
+        </div>
+        <div id="rmsL">RMS: 0</div>
+    </div>
+
+    <div class="status">
+        <h3>Right (원장님)</h3>
+        <div class="meter">
+            <div id="meterR" class="meter-fill" style="width: 0%"></div>
+        </div>
+        <div id="rmsR">RMS: 0</div>
+    </div>
+
+    <div class="status">
+        <h3>진단:</h3>
+        <div id="diagnosis">마이크를 선택하고 테스트 시작을 누르세요</div>
+    </div>
+
+    <script>
+        let audioContext, stream, processor, source;
+
+        // List microphones
+        navigator.mediaDevices.enumerateDevices().then(devices => {
+            const audioInputs = devices.filter(d => d.kind === 'audioinput');
+            const select = document.getElementById('micSelect');
+            audioInputs.forEach((device, i) => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `마이크 ${i + 1}`;
+                select.add(option);
+            });
+        });
+
+        async function startTest() {
+            const deviceId = document.getElementById('micSelect').value;
+
+            stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    channelCount: 2,
+                    sampleRate: 16000,
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                }
+            });
+
+            audioContext = new AudioContext({ sampleRate: 16000 });
+            source = audioContext.createMediaStreamSource(stream);
+            processor = audioContext.createScriptProcessor(4096, 2, 2);
+
+            processor.onaudioprocess = (e) => {
+                const leftData = e.inputBuffer.getChannelData(0);
+                const rightData = e.inputBuffer.getChannelData(1);
+
+                const rmsL = Math.sqrt(leftData.reduce((sum, val) => sum + val * val, 0) / leftData.length);
+                const rmsR = Math.sqrt(rightData.reduce((sum, val) => sum + val * val, 0) / rightData.length);
+
+                // Update UI
+                const percentL = Math.min(rmsL * 1000, 100);
+                const percentR = Math.min(rmsR * 1000, 100);
+
+                document.getElementById('meterL').style.width = percentL + '%';
+                document.getElementById('meterR').style.width = percentR + '%';
+                document.getElementById('rmsL').innerHTML = `RMS: ${rmsL.toFixed(4)} ${rmsL > 0.01 ? '<span class="good">✅ 좋음</span>' : '<span class="bad">❌ 너무 낮음</span>'}`;
+                document.getElementById('rmsR').innerHTML = `RMS: ${rmsR.toFixed(4)} ${rmsR > 0.01 ? '<span class="good">✅ 좋음</span>' : '<span class="bad">❌ 너무 낮음</span>'}`;
+
+                // Diagnosis
+                let diag = '';
+                if (rmsL < 0.001 && rmsR < 0.001) {
+                    diag = '❌ <span class="bad">양쪽 마이크 모두 입력 없음</span><br>→ 무선 마이크 송신기 2개가 켜져 있는지 확인하세요';
+                } else if (rmsL < 0.001) {
+                    diag = '⚠️ Left 채널(치료실) 입력 없음<br>→ 왼쪽 송신기를 확인하세요';
+                } else if (rmsR < 0.001) {
+                    diag = '⚠️ Right 채널(원장님) 입력 없음<br>→ 오른쪽 송신기를 확인하세요';
+                } else {
+                    diag = '✅ <span class="good">양쪽 마이크 정상 작동 중!</span>';
+                }
+                document.getElementById('diagnosis').innerHTML = diag;
+            };
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            console.log('테스트 시작됨');
+        }
+
+        function stopTest() {
+            if (processor) processor.disconnect();
+            if (source) source.disconnect();
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            if (audioContext) audioContext.close();
+
+            document.getElementById('meterL').style.width = '0%';
+            document.getElementById('meterR').style.width = '0%';
+            document.getElementById('diagnosis').innerHTML = '테스트 중지됨';
+        }
+    </script>
+</body>
+
+</html>
