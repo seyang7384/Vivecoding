@@ -16,7 +16,8 @@ const AddPatientModal = ({ isOpen, onClose, onSave, initialData = null }) => {
         isAutoInsurance: false,
         injuryDate: '',
         firstVisitDate: '',
-        herbalPrescriptions: []
+        herbalPrescriptions: [],
+        treatmentLevel: '1단계'
     });
 
     // Refs for auto-focus
@@ -41,7 +42,8 @@ const AddPatientModal = ({ isOpen, onClose, onSave, initialData = null }) => {
                 isAutoInsurance: initialData.isAutoInsurance || false,
                 injuryDate: initialData.injuryDate || '',
                 firstVisitDate: initialData.firstVisitDate || '',
-                herbalPrescriptions: initialData.herbalPrescriptions || []
+                herbalPrescriptions: initialData.herbalPrescriptions || [],
+                treatmentLevel: initialData.treatmentLevel || '1단계'
             });
         } else if (isOpen && !initialData) {
             // Reset for new patient
@@ -57,7 +59,8 @@ const AddPatientModal = ({ isOpen, onClose, onSave, initialData = null }) => {
                 isAutoInsurance: false,
                 injuryDate: '',
                 firstVisitDate: '',
-                herbalPrescriptions: []
+                herbalPrescriptions: [],
+                treatmentLevel: '1단계'
             });
         }
     }, [isOpen, initialData]);
@@ -131,7 +134,8 @@ const AddPatientModal = ({ isOpen, onClose, onSave, initialData = null }) => {
             isAutoInsurance: false,
             injuryDate: '',
             firstVisitDate: '',
-            herbalPrescriptions: []
+            herbalPrescriptions: [],
+            treatmentLevel: '1단계'
         });
     };
 
@@ -261,13 +265,33 @@ const AddPatientModal = ({ isOpen, onClose, onSave, initialData = null }) => {
                         )}
                     </div>
 
-                    <Input
-                        label="첩약 처방일"
-                        name="herbalStartDate"
-                        type="date"
-                        value={formData.herbalStartDate || ''}
-                        onChange={handleChange}
-                    />
+                    {/* Treatment Level Section */}
+                    <div className="border-t pt-4 mt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">진료 단계 (로딩 강도)</label>
+                        <select
+                            name="treatmentLevel"
+                            value={formData.treatmentLevel || '1단계'}
+                            onChange={handleChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="1단계">1단계 - 일반 침치료 (가장 적음)</option>
+                            <option value="2단계">2단계 - 일반+약침</option>
+                            <option value="3단계">3단계 - 일반+약침+추나</option>
+                            <option value="4단계">4단계 - 일반+약침+추나+특수</option>
+                            <option value="5단계">5단계 - 피부 시술</option>
+                            <option value="6단계">6단계 - 첩약 상담</option>
+                        </select>
+                    </div>
+
+                    <div className="border-t pt-4 mt-4">
+                        <Input
+                            label="첩약 처방일"
+                            name="herbalStartDate"
+                            type="date"
+                            value={formData.herbalStartDate || ''}
+                            onChange={handleChange}
+                        />
+                    </div>
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">특이사항 (메모)</label>

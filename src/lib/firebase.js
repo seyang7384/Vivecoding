@@ -8,13 +8,13 @@ import { getDatabase } from "firebase/database";
 // Your web app's Firebase configuration
 // TODO: Replace with actual config from Firebase Console
 const firebaseConfig = {
-    apiKey: "API_KEY",
-    authDomain: "PROJECT_ID.firebaseapp.com",
-    databaseURL: "https://PROJECT_ID-default-rtdb.firebaseio.com",
-    projectId: "PROJECT_ID",
-    storageBucket: "PROJECT_ID.appspot.com",
-    messagingSenderId: "SENDER_ID",
-    appId: "APP_ID"
+    apiKey: "AIzaSyB17ttZ0WOFch9D6HxsyZMxy0emv29rVgM",
+    authDomain: "hospital-os.firebaseapp.com",
+    projectId: "hospital-os",
+    storageBucket: "hospital-os.firebasestorage.app",
+    messagingSenderId: "890996763438",
+    appId: "1:890996763438:web:747a4c8d5ce598d31168bf",
+    measurementId: "G-68M1Y3XF2Y"
 };
 
 // Initialize Firebase

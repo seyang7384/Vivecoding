@@ -1,1 +1,85 @@
 @import "tailwindcss";
+
+/* Hide scrollbar for cleaner look */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+/* Custom Table Styles (if needed) */
+table {
+    border-spacing: 0;
+}
+
+th,
+td {
+    /* Ensure borders are crisp */
+    border-color: #e5e7eb;
+}
+
+/* Weekly View Fixed Column Layout */
+.weekly-view-wrapper .fc-timegrid-event-harness {
+    /* We will use specific classes for positioning */
+    transition: none !important;
+}
+
+/* Ensure the event content fills the harness */
+.weekly-view-wrapper .fc-timegrid-event {
+    width: 100% !important;
+    height: 100% !important;
+    border: none !important;
+    /* Remove border for cleaner bar look */
+    background: transparent !important;
+    /* Let inner div handle color */
+    box-shadow: none !important;
+}
+
+/* Fixed Column Positions (12.5px Width + 1px Gap) 
+   Step size = 13.5px
+*/
+.weekly-view-wrapper .fc-timegrid-event-harness.col-0 {
+    left: 0px !important;
+    width: 12.5px !important;
+    right: auto !important;
+}
+
+.weekly-view-wrapper .fc-timegrid-event-harness.col-1 {
+    left: 13.5px !important;
+    width: 12.5px !important;
+    right: auto !important;
+}
+
+.weekly-view-wrapper .fc-timegrid-event-harness.col-2 {
+    left: 27px !important;
+    width: 12.5px !important;
+    right: auto !important;
+}
+
+.weekly-view-wrapper .fc-timegrid-event-harness.col-3 {
+    left: 40.5px !important;
+    width: 12.5px !important;
+    right: auto !important;
+}
+
+.weekly-view-wrapper .fc-timegrid-event-harness.col-4 {
+    left: 54px !important;
+    width: 12.5px !important;
+    right: auto !important;
+}
+
+.weekly-view-wrapper .fc-timegrid-event-harness.col-5 {
+    left: 67.5px !important;
+    width: 12.5px !important;
+    right: auto !important;
+}
+
+.weekly-view-wrapper .fc-timegrid-event-harness.col-6 {
+    left: 81px !important;
+    width: 12.5px !important;
+    right: auto !important;
+}
+
+.weekly-view-wrapper .fc-timegrid-event-harness.col-7 {
+    left: 94.5px !important;
+    width: 12.5px !important;
+    right: auto !important;
+}

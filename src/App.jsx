@@ -12,6 +12,9 @@ import Inventory from './pages/Inventory';
 import Manuals from './pages/Manuals';
 import ManualDetail from './pages/ManualDetail';
 import VoiceHQ from './pages/VoiceHQ';
+import TodoListPage from './pages/TodoListPage';
+import PaymentPage from './pages/PaymentPage';
+import ProductManagement from './pages/ProductManagement';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -34,6 +37,9 @@ function App() {
             <Route path="manuals" element={<Manuals />} />
             <Route path="manuals/:id" element={<ManualDetail />} />
             <Route path="voice-hq" element={<VoiceHQ />} />
+            <Route path="todo" element={<TodoListPage />} />
+            <Route path="payment" element={<PaymentPage />} />
+            <Route path="products" element={<ProductManagement />} />
           </Route>
         </Route>
 

@@ -73,6 +73,29 @@ def split_audio(wav_path, segment_time=60):
         print(f"❌ Splitting failed: {e}")
         return [], None
 
+def load_boostings():
+    boostings = []
+    try:
+        boosting_file = os.path.join(os.path.dirname(__file__), 'boostings.txt')
+        if os.path.exists(boosting_file):
+            try:
+                with open(boosting_file, 'r', encoding='utf-8') as f:
+                    words = [line.strip() for line in f if line.strip()]
+            except UnicodeDecodeError:
+                with open(boosting_file, 'r', encoding='cp949', errors='ignore') as f:
+                    words = [line.strip() for line in f if line.strip()]
+            
+            if words:
+                # Limit to 300 words to avoid API limits (max 50000 chars usually, but safer to limit count)
+                words = words[:300]
+                boostings.append({"words": ",".join(words)})
+            print(f"📚 Loaded {len(words)} boosting keywords")
+    except Exception as e:
+        print(f"⚠️ Failed to load boostings: {e}")
+    return boostings
+
+BOOSTINGS = load_boostings()
+
 def transcribe_chunk(file_path):
     """Transcribe a single chunk"""
     headers = {'X-CLOVASPEECH-API-KEY': SECRET_KEY}
@@ -86,7 +109,7 @@ def transcribe_chunk(file_path):
                     'completion': 'sync',
                     'wordAlignment': False,
                     'fullText': True,
-                    'boosting': []
+                    'boostings': BOOSTINGS
                 }), 'application/json')
             }
             
@@ -109,17 +132,31 @@ def process_file(file_path):
     if not wav_path: return None
     
     # 2. Split into chunks
-    chunks, chunk_dir = split_audio(wav_path)
+    segment_time = 60
+    chunks, chunk_dir = split_audio(wav_path, segment_time=segment_time)
     if not chunks: return None
     
     full_text = ""
+    all_segments = []
     print(f"🚀 Transcribing {len(chunks)} chunks...")
     
     for i, chunk_path in enumerate(chunks):
         print(f"  - Chunk {i+1}/{len(chunks)}...", end='\r')
         result = transcribe_chunk(chunk_path)
-        if result and result.get('text'):
-            full_text += result.get('text') + " "
+        if result:
+            # Append text
+            if result.get('text'):
+                full_text += result.get('text') + " "
+            
+            # Append segments with offset
+            if result.get('segments'):
+                time_offset = i * segment_time * 1000 # Convert to ms
+                for seg in result.get('segments'):
+                    new_seg = seg.copy()
+                    new_seg['start'] += time_offset
+                    new_seg['end'] += time_offset
+                    all_segments.append(new_seg)
+                    
         time.sleep(0.5) # Rate limit prevention
     
     print(f"\n✅ Transcription complete for {os.path.basename(file_path)}")
@@ -130,7 +167,7 @@ def process_file(file_path):
     if wav_path != file_path and os.path.exists(wav_path): # Don't delete original if it was wav
         os.remove(wav_path)
         
-    return {"text": full_text.strip()}
+    return {"text": full_text.strip(), "segments": all_segments}
 
 def main():
     if not os.path.exists(TRANSCRIPTS_DIR):

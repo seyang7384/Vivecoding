@@ -5,39 +5,9 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import AddPatientModal from '../components/patients/AddPatientModal';
 
-// Mock data for initial load
-const MOCK_PATIENTS = [
-    {
-        id: 1,
-        name: '김철수',
-        birthDate: '1980-05-12',
-        gender: 'male',
-        phone: '010-1234-5678',
-        lastVisit: '2023-10-15',
-        memo: '고혈압 주의',
-        herbalStartDate: '2023-11-01'
-    },
-    {
-        id: 2,
-        name: '이영희',
-        birthDate: '1992-08-23',
-        gender: 'female',
-        phone: '010-9876-5432',
-        lastVisit: '2023-10-20',
-        memo: '알레르기 비염',
-        herbalStartDate: ''
-    },
-    {
-        id: 3,
-        name: '박민수',
-        birthDate: '1975-12-30',
-        gender: 'male',
-        phone: '010-5555-3333',
-        lastVisit: '2023-09-05',
-        memo: '테스트용: 첩약 처방일 27일 전',
-        herbalStartDate: '2025-10-24' // 2025-11-20 기준 27일 전
-    }
-];
+import { patientService } from '../services/patientService';
+
+// Mock data removed - using Firestore
 
 const Patients = () => {
     const navigate = useNavigate();
@@ -45,29 +15,29 @@ const Patients = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [patients, setPatients] = useState([]);
 
-    // Load patients from localStorage on mount
+    // Load patients from Firestore on mount
     useEffect(() => {
-        const storedPatients = localStorage.getItem('patients');
-        if (storedPatients) {
-            setPatients(JSON.parse(storedPatients));
-        } else {
-            // Initialize with mock data if empty
-            setPatients(MOCK_PATIENTS);
-            localStorage.setItem('patients', JSON.stringify(MOCK_PATIENTS));
-        }
+        const loadPatients = async () => {
+            try {
+                const data = await patientService.getPatients();
+                setPatients(data);
+            } catch (error) {
+                console.error("환자 로딩 실패:", error);
+            }
+        };
+        loadPatients();
     }, []);
 
-    const handleAddPatient = (newPatientData) => {
-        const newPatient = {
-            id: Date.now(), // Simple ID generation
-            ...newPatientData,
-            lastVisit: '-'
-        };
-
-        const updatedPatients = [newPatient, ...patients];
-        setPatients(updatedPatients);
-        localStorage.setItem('patients', JSON.stringify(updatedPatients));
-        setIsModalOpen(false);
+    const handleAddPatient = async (newPatient) => {
+        try {
+            await patientService.addPatient(newPatient);
+            // 저장 후 목록 다시 로딩
+            const data = await patientService.getPatients();
+            setPatients(data);
+            setIsModalOpen(false);
+        } catch (error) {
+            alert("저장 실패: " + error.message);
+        }
     };
 
     const filteredPatients = patients.filter(patient =>
@@ -80,7 +50,7 @@ const Patients = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h1 className="text-2xl font-bold text-gray-900">환자 관리</h1>
-                <Button onClick={() => setIsModalOpen(true)}>
+                <Button onClick={() => setIsModalOpen(true)} className="w-auto">
                     <Plus className="w-4 h-4 mr-2" />
                     신규 환자 등록
                 </Button>

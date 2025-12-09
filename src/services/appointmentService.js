@@ -5,7 +5,10 @@ import {
     getDocs,
     query,
     where,
-    Timestamp
+    Timestamp,
+    doc,
+    updateDoc,
+    deleteDoc
 } from 'firebase/firestore';
 
 const COLLECTION_NAME = 'appointments';
@@ -61,6 +64,42 @@ export const appointmentService = {
             appointments.push(newAppointment);
             saveLocalData(appointments);
             return newAppointment;
+        }
+    },
+
+    // Update appointment
+    updateAppointment: async (id, updateData) => {
+        try {
+            const docRef = doc(db, COLLECTION_NAME, id);
+            await withTimeout(updateDoc(docRef, {
+                ...updateData,
+                updatedAt: Timestamp.now()
+            }));
+            return { id, ...updateData };
+        } catch (error) {
+            console.warn("Firestore failed or timed out, falling back to localStorage:", error);
+            const appointments = getLocalData();
+            const index = appointments.findIndex(app => app.id === id);
+            if (index !== -1) {
+                appointments[index] = { ...appointments[index], ...updateData };
+                saveLocalData(appointments);
+            }
+            return { id, ...updateData };
+        }
+    },
+
+    // Delete appointment
+    deleteAppointment: async (id) => {
+        try {
+            const docRef = doc(db, COLLECTION_NAME, id);
+            await withTimeout(deleteDoc(docRef));
+            return id;
+        } catch (error) {
+            console.warn("Firestore failed or timed out, falling back to localStorage:", error);
+            const appointments = getLocalData();
+            const filteredAppointments = appointments.filter(app => app.id !== id);
+            saveLocalData(filteredAppointments);
+            return id;
         }
     },
 

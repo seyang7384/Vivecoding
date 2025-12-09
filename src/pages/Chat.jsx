@@ -56,12 +56,23 @@ const Chat = () => {
         e.preventDefault();
         if (!newMessage.trim() || !selectedRoom) return;
 
+        let messageText = newMessage;
+
         // ============================================================
         // 🛡️ [1단계] SmartParser로 텍스트 파싱 및 모호한 약재 검문소
         // ============================================================
         let parsedData = null;
         try {
-            parsedData = parsePrescription(newMessage);
+            parsedData = parsePrescription(messageText);
+
+            // [NEW] 감초 -> 자감초 확인 로직
+            if (parsedData && parsedData.herbs && parsedData.herbs.some(h => h.name === '감초')) {
+                if (window.confirm("'감초'가 입력되었습니다. '자감초'로 변경하시겠습니까?")) {
+                    messageText = messageText.replace(/감초/g, '자감초');
+                    parsedData = parsePrescription(messageText); // Re-parse with updated text
+                }
+            }
+
             console.log("🔍 SmartParser Result:", parsedData);
             console.log("📋 추출된 약재:", parsedData?.herbs);
 
@@ -87,12 +98,12 @@ const Chat = () => {
         // ============================================================
 
         // Check if message is prescription format (4 lines)
-        const lines = newMessage.split('\n').filter(line => line.trim());
+        const lines = messageText.split('\n').filter(line => line.trim());
 
         // Auto-detect prescription in "첩약 처방" room
         if (selectedRoom.id === 'prescription' && lines.length >= 4) {
             // Try to parse as prescription
-            const parseResult = prescriptionParserService.parseText(newMessage);
+            const parseResult = prescriptionParserService.parseText(messageText);
 
             if (parseResult.success) {
                 // Get all patients
@@ -100,7 +111,7 @@ const Chat = () => {
 
                 // Process prescription
                 const result = prescriptionService.processPrescription(
-                    newMessage,
+                    messageText,
                     parseResult.data.duration,
                     patients
                 );
@@ -148,7 +159,7 @@ const Chat = () => {
         // Send as normal message
         const mockMessage = {
             id: Date.now().toString(),
-            text: newMessage,
+            text: messageText,
             userId: 'current-user',
             userName: '관리자',
             timestamp: Date.now(),

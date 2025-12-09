@@ -13,10 +13,18 @@ def extract_keywords():
         print("❌ Transcripts directory not found. Run process_recordings.py first.")
         return
 
-    kiwi = Kiwi()
-    
+    try:
+        kiwi = Kiwi()
+        use_kiwi = True
+        print("✅ Kiwi initialized successfully.")
+    except Exception as e:
+        use_kiwi = False
+        print(f"⚠️ Kiwi initialization failed: {e}")
+        print("⚠️ Switching to simple regex-based extraction.")
+        import re
+
     # Custom dictionary for medical terms (optional initial seed)
-    # kiwi.add_user_word('추나', 'NNG')
+    # if use_kiwi: kiwi.add_user_word('추나', 'NNG')
     
     all_text = ""
     files = [f for f in os.listdir(TRANSCRIPTS_DIR) if f.endswith('.txt')]
@@ -32,42 +40,66 @@ def extract_keywords():
             all_text += f.read() + "\n"
 
     # Analyze
-    tokens = kiwi.tokenize(all_text)
-    
-    # Filter for Nouns (NNG, NNP) and maybe Verbs (VV) if needed
-    # We focus on Nouns for boosting
     keywords = []
-    for token in tokens:
-        if token.tag in ['NNG', 'NNP']: # Common Noun, Proper Noun
-            if len(token.form) > 1: # Ignore single char words
-                keywords.append(token.form)
+    if use_kiwi:
+        try:
+            tokens = kiwi.tokenize(all_text)
+            # Filter for Nouns (NNG, NNP) and maybe Verbs (VV) if needed
+            # We focus on Nouns for boosting
+            for token in tokens:
+                if token.tag in ['NNG', 'NNP']: # Common Noun, Proper Noun
+                    if len(token.form) > 1: # Ignore single char words
+                        keywords.append(token.form)
+        except Exception as e:
+            print(f"❌ Kiwi tokenization failed: {e}")
+            use_kiwi = False # Fallback if tokenization crashes
+
+    if not use_kiwi:
+        # Fallback: Regex for Hangul words
+        import re
+        # Match Hangul words with 2 or more characters
+        words = re.findall(r'[가-힣]{2,}', all_text)
+        keywords = words
 
     # Count frequency
     counter = Counter(keywords)
     
-    # Get top 100 keywords
-    top_keywords = counter.most_common(100)
+    # Filter by frequency (at least 2 occurrences to avoid noise)
+    # User requested not to set a hard limit like 200 or 1000, but to judge based on extraction.
+    # We will keep all nouns that appear at least twice.
+    new_keywords = [word for word, count in counter.items() if count >= 2]
     
-    # Format for Clova Boosting
-    boosting_list = []
-    keyword_data = []
+    print(f"🔍 Extracted {len(new_keywords)} significant keywords (freq >= 2) from new transcripts.")
 
-    print("\n🔍 Top 20 Keywords found:")
-    for word, count in top_keywords[:20]:
-        print(f"- {word}: {count}")
-        boosting_list.append({"words": word})
-        keyword_data.append({"word": word, "count": count})
+    # Load EXISTING boostings
+    existing_keywords = set()
+    if os.path.exists(BOOSTING_FILE):
+        try:
+            with open(BOOSTING_FILE, 'r', encoding='utf-8') as f:
+                existing_keywords = set(line.strip() for line in f if line.strip())
+        except UnicodeDecodeError:
+             with open(BOOSTING_FILE, 'r', encoding='cp949', errors='ignore') as f:
+                existing_keywords = set(line.strip() for line in f if line.strip())
+    
+    print(f"📂 Loaded {len(existing_keywords)} existing keywords.")
 
-    # Save detailed JSON
+    # Merge (Append-only)
+    merged_keywords = existing_keywords.union(set(new_keywords))
+    
+    print(f"✨ Total keywords after merge: {len(merged_keywords)}")
+
+    # Save detailed JSON (only for new analysis this time, or we could merge this too if needed)
+    # For now, let's save the new analysis stats to keywords.json
+    keyword_data = [{"word": word, "count": count} for word, count in counter.most_common()]
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         json.dump(keyword_data, f, ensure_ascii=False, indent=2)
-    print(f"\n💾 Saved keywords to {OUTPUT_FILE}")
+    print(f"💾 Saved analysis stats to {OUTPUT_FILE}")
 
-    # Save simple list for boosting copy-paste
+    # Save merged list for boosting
     with open(BOOSTING_FILE, 'w', encoding='utf-8') as f:
-        for item in boosting_list:
-            f.write(f"{item['words']}\n")
-    print(f"💾 Saved boosting list to {BOOSTING_FILE}")
+        for word in sorted(list(merged_keywords)):
+            f.write(f"{word}\n")
+    print(f"💾 Saved merged boosting list to {BOOSTING_FILE}")
 
 if __name__ == "__main__":
     extract_keywords()

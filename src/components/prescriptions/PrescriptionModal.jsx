@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { X, FileText, AlertCircle } from 'lucide-react';
 import Button from '../ui/Button';
 import { prescriptionService } from '../../services/prescriptionService';
+import { visitService } from '../../services/visitService';
 import { useNavigate } from 'react-router-dom';
 
-const PrescriptionModal = ({ isOpen, onClose, preSelectedPatient = null }) => {
+const PrescriptionModal = ({ isOpen, onClose, preSelectedPatient = null, onPrescriptionComplete }) => {
     const navigate = useNavigate();
     const [text, setText] = useState('');
     const [duration, setDuration] = useState(15);
@@ -54,15 +55,38 @@ const PrescriptionModal = ({ isOpen, onClose, preSelectedPatient = null }) => {
         setPreview(result);
     };
 
-    const handleConfirm = () => {
+    const [price, setPrice] = useState(0);
+
+    const handleConfirm = async () => {
         setIsProcessing(true);
 
-        // Simulate processing delay
-        setTimeout(() => {
-            alert('처방이 성공적으로 등록되었습니다!\n\n📅 재상담 일정이 자동으로 추가되었습니다.\n💬 첩약 처방 채팅방에 알림이 전송되었습니다.');
-            onClose();
+        try {
+            // 1. Save prescription (existing logic)
+            // In a real app, we would save the prescription object here
+
+            // 2. Add to visit record
+            if (preview && preview.prescription) {
+                const today = new Date().toISOString().split('T')[0];
+                await visitService.addItem(preview.prescription.patientId, today, {
+                    type: 'prescription',
+                    name: `첩약 (${preview.prescription.duration}일) - ${preview.prescription.prescriptionDetail}`,
+                    price: price,
+                    category: '첩약'
+                });
+            }
+
+            // Simulate processing delay
+            setTimeout(() => {
+                alert('처방이 성공적으로 등록되었습니다!\n\n📅 재상담 일정이 자동으로 추가되었습니다.\n💬 첩약 처방 채팅방에 알림이 전송되었습니다.');
+                if (onPrescriptionComplete) onPrescriptionComplete();
+                onClose();
+                setIsProcessing(false);
+            }, 500);
+        } catch (error) {
+            console.error("Error saving prescription:", error);
+            alert("처방 등록 실패: " + error.message);
             setIsProcessing(false);
-        }, 500);
+        }
     };
 
     return (
@@ -106,20 +130,34 @@ const PrescriptionModal = ({ isOpen, onClose, preSelectedPatient = null }) => {
                         />
                     </div>
 
-                    {/* Duration Selection */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            복용 기간
-                        </label>
-                        <select
-                            value={duration}
-                            onChange={(e) => setDuration(Number(e.target.value))}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                            <option value={7}>7일</option>
-                            <option value={15}>15일</option>
-                            <option value={30}>30일</option>
-                        </select>
+                    {/* Duration & Price Selection */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                복용 기간
+                            </label>
+                            <select
+                                value={duration}
+                                onChange={(e) => setDuration(Number(e.target.value))}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value={7}>7일</option>
+                                <option value={15}>15일</option>
+                                <option value={30}>30일</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                처방 가격 (원)
+                            </label>
+                            <input
+                                type="number"
+                                value={price}
+                                onChange={(e) => setPrice(Number(e.target.value))}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
+                                placeholder="0"
+                            />
+                        </div>
                     </div>
 
                     {/* Error Display */}
@@ -154,6 +192,10 @@ const PrescriptionModal = ({ isOpen, onClose, preSelectedPatient = null }) => {
                                 <div className="flex">
                                     <span className="text-gray-600 w-24">복용 기간:</span>
                                     <span className="text-gray-900">{preview.prescription.duration}일</span>
+                                </div>
+                                <div className="flex">
+                                    <span className="text-gray-600 w-24">가격:</span>
+                                    <span className="text-gray-900 font-bold">{price.toLocaleString()}원</span>
                                 </div>
                                 <div className="flex">
                                     <span className="text-gray-600 w-24">재상담일:</span>

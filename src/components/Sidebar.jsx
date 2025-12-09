@@ -11,7 +11,9 @@ import {
     MessageCircle,
     Package,
     Book,
-    Mic
+    Mic,
+    CheckSquare,
+    Banknote
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -24,6 +26,9 @@ const Sidebar = ({ isOpen, onClose }) => {
         { icon: Package, label: '재고 관리', path: '/inventory' },
         { icon: Book, label: '업무 매뉴얼', path: '/manuals' },
         { icon: Mic, label: '음성 관제 (HQ)', path: '/voice-hq' },
+        { icon: CheckSquare, label: '업무 체크리스트', path: '/todo' },
+        { icon: Banknote, label: '수납 일지', path: '/payment' },
+        { icon: Package, label: '수가 관리', path: '/products' },
         { icon: Settings, label: '설정', path: '/settings' },
     ];
 
