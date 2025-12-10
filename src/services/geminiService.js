@@ -72,7 +72,6 @@ class GeminiService {
         }
     }
 
-    // (로그 분석 함수 유지)
     async analyzeLogs(logs) {
         if (this.isAnalyzing || logs.length === 0) return null;
         this.isAnalyzing = true;
@@ -90,6 +89,69 @@ class GeminiService {
         });
         this.isAnalyzing = false;
         return summary;
+    }
+
+    /**
+     * Generate personalized message based on transcript (Single Channel Audio)
+     * @param {string} transcript - Full conversation text (mixed voices)
+     * @param {string} patientName - Target patient name
+     * @param {string} type - 'PRIORITY' (우선배정) or 'RECALL' (리콜)
+     */
+    async generatePersonalizedMessage(transcript, patientName, type = 'RECALL') {
+        if (!this.apiKey) return "API Key가 설정되지 않았습니다.";
+
+        try {
+            const systemPrompt = `
+            너는 '세양한의원'의 베테랑 상담 실장이야.
+            제공되는 텍스트는 **원장님이 마이크를 차고 진료한 녹음 내용**이야. (원장님 목소리와 환자 목소리가 섞여 있어)
+            
+            [목표]
+            환자에게 보낼 **개인화된 문자 메시지**를 작성해.
+            
+            [분석 방법]
+            1. **화자 구분**: 텍스트에서 '원장님'이 "${patientName}님"이라고 부르는 부분을 찾아서 문맥을 파악해.
+            2. **정보 추출**:
+               - **{{pain_site}}**: 환자가 아프다고 한 부위 (예: 허리, 뒷목).
+               - **표현**: 환자가 사용한 구체적 표현 (예: "뻐근하다", "시리다", "욱신거린다")을 찾아내서 메시지에 녹여내.
+               - **{{reject_reason}}**: (예약 거절 시) 환자가 댄 핑계나 사유 (예: "김장하러 가서", "야근 때문에").
+            
+            [메시지 작성 규칙]
+            - **톤앤매너**: 정중하면서도 환자를 진심으로 걱정하는 따뜻한 어조.
+            - **필수 포함**: 원장님의 당부 사항 ("염증이 걱정되니 꼭 오셔야 합니다" 등 문맥에 맞게).
+            - **길이**: 3~4문장 이내로 간결하게.
+            
+            [상황별 가이드]
+            - **PRIORITY (우선 배정)**: "아까 말씀하신 [사유] 때문에 일정 잡기 어려우셨죠? 원장님이 [부위] 염증 걱정하시며 18:00까지는 자리를 비워두라고 하셨습니다. 편하실 때 연락 주세요."
+            - **RECALL (리콜)**: "지난번 [부위]가 [표현]하다고 하셨는데 좀 어떠신가요? 원장님이 많이 궁금해하십니다. 야간진료 열려있으니 편하게 내원하세요."
+            
+            [출력 형식]
+            메시지 내용만 출력해. (부가 설명 금지)
+            `;
+
+            const response = await fetch(this.apiEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: "gpt-4o",
+                    messages: [
+                        { role: "system", content: systemPrompt },
+                        { role: "user", content: `[환자명: ${patientName}]\n[녹음 내용]\n${transcript}` }
+                    ],
+                    temperature: 0.7
+                })
+            });
+
+            if (!response.ok) throw new Error('OpenAI API Error');
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content || "메시지 생성 실패";
+
+        } catch (error) {
+            console.error('AI Message Generation Failed:', error);
+            return "AI 메시지 생성 중 오류가 발생했습니다.";
+        }
     }
 }
 

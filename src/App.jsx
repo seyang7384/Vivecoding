@@ -15,6 +15,7 @@ import VoiceHQ from './pages/VoiceHQ';
 import TodoListPage from './pages/TodoListPage';
 import PaymentPage from './pages/PaymentPage';
 import ProductManagement from './pages/ProductManagement';
+import DefensePage from './pages/DefensePage'; // Added Import
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -39,6 +40,7 @@ function App() {
             <Route path="voice-hq" element={<VoiceHQ />} />
             <Route path="todo" element={<TodoListPage />} />
             <Route path="payment" element={<PaymentPage />} />
+            <Route path="defense" element={<DefensePage />} /> {/* Added Route */}
             <Route path="products" element={<ProductManagement />} />
           </Route>
         </Route>

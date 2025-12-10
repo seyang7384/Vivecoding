@@ -1,30 +1,93 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { User, Clock, CheckCircle, Activity, Home } from 'lucide-react';
+import { User, Clock, CheckCircle, Activity, Calendar, AlertCircle } from 'lucide-react';
+import { appointmentService } from '../services/appointmentService';
+import { patientService } from '../services/patientService';
 
 const COLUMNS = {
-    waiting: { id: 'waiting', title: '대기중', icon: Clock, color: 'bg-gray-100 text-gray-600' },
-    consulting: { id: 'consulting', title: '상담중', icon: User, color: 'bg-blue-100 text-blue-600' },
-    treating: { id: 'treating', title: '시술중', icon: Activity, color: 'bg-red-100 text-red-600' },
-    payment: { id: 'payment', title: '수납대기', icon: CheckCircle, color: 'bg-yellow-100 text-yellow-600' },
-    done: { id: 'done', title: '귀가', icon: Home, color: 'bg-green-100 text-green-600' },
-};
-
-const INITIAL_DATA = {
-    waiting: [
-        { id: 'p1', name: '김철수', time: '14:00', type: '초진' },
-        { id: 'p2', name: '이영희', time: '14:15', type: '재진' },
-    ],
-    consulting: [
-        { id: 'p3', name: '박민수', time: '13:50', type: '상담' },
-    ],
-    treating: [],
-    payment: [],
-    done: [],
+    reservation: { id: 'reservation', title: '예약', icon: Calendar, color: 'bg-indigo-100 text-indigo-600' },
+    waiting: { id: 'waiting', title: '대기', icon: Clock, color: 'bg-gray-100 text-gray-600' },
+    treating: { id: 'treating', title: '진료', icon: Activity, color: 'bg-red-100 text-red-600' },
+    payment_done: { id: 'payment_done', title: '수납 완료', icon: CheckCircle, color: 'bg-green-100 text-green-600' },
 };
 
 const TreatmentStatus = () => {
-    const [columns, setColumns] = useState(INITIAL_DATA);
+    const [columns, setColumns] = useState({
+        reservation: [],
+        waiting: [],
+        treating: [],
+        payment_done: []
+    });
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            setLoading(true);
+            try {
+                // 1. Get Today's Appointments
+                const appointments = await appointmentService.getAppointments();
+                const today = new Date().toISOString().split('T')[0];
+
+                const todaysAppointments = appointments.filter(app => {
+                    let appDate = '';
+                    if (app.date) appDate = app.date;
+                    else if (app.start) appDate = app.start.split('T')[0];
+                    return appDate === today;
+                });
+
+                // 2. Process each appointment to check package status
+                const processedAppointments = await Promise.all(todaysAppointments.map(async (app) => {
+                    let needsRenewal = false;
+                    let renewalPackageName = '';
+
+                    if (app.patientId) {
+                        try {
+                            const patient = await patientService.getPatientById(app.patientId);
+                            if (patient && patient.packages) {
+                                // Check for packages with exactly 2 remaining sessions
+                                const targetPkg = patient.packages.find(pkg => {
+                                    const remaining = pkg.totalCounts - pkg.usedCounts;
+                                    return remaining === 2;
+                                });
+                                if (targetPkg) {
+                                    needsRenewal = true;
+                                    renewalPackageName = targetPkg.name;
+                                }
+                            }
+                        } catch (err) {
+                            console.error(`Failed to fetch patient ${app.patientId}`, err);
+                        }
+                    }
+
+                    return {
+                        id: app.id,
+                        name: app.patientName || app.title,
+                        time: app.start ? app.start.split('T')[1].substring(0, 5) : (app.time || '00:00'),
+                        type: app.type || '진료',
+                        needsRenewal,
+                        renewalPackageName
+                    };
+                }));
+
+                // Sort by time
+                processedAppointments.sort((a, b) => a.time.localeCompare(b.time));
+
+                setColumns(prev => ({
+                    ...prev,
+                    reservation: processedAppointments,
+                    // Keep other columns empty for now or load from a persistent status service if exists
+                    // For this demo, we assume fresh start or only reservation is auto-filled
+                }));
+
+            } catch (error) {
+                console.error("Failed to load treatment status data:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, []);
 
     const onDragEnd = (result) => {
         const { source, destination } = result;
@@ -56,15 +119,17 @@ const TreatmentStatus = () => {
         });
     };
 
+    if (loading) return <div className="p-8 text-center">Loading...</div>;
+
     return (
         <div className="h-full flex flex-col">
             <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">진료 현황</h1>
-                <p className="text-gray-500">실시간 환자 이동 현황을 관리합니다.</p>
+                <p className="text-gray-500">실시간 환자 이동 현황 및 패키지 연장 대상자 확인</p>
             </div>
 
             <DragDropContext onDragEnd={onDragEnd}>
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 overflow-x-auto pb-4">
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto pb-4">
                     {Object.values(COLUMNS).map((col) => (
                         <div key={col.id} className="flex flex-col h-full min-w-[250px] bg-gray-50 rounded-xl p-4">
                             <div className={`flex items-center justify-between mb-4 p-2 rounded-lg ${col.color}`}>
@@ -101,9 +166,17 @@ const TreatmentStatus = () => {
                                                                 {patient.time}
                                                             </span>
                                                         </div>
-                                                        <div className="text-sm text-gray-600">
+                                                        <div className="text-sm text-gray-600 mb-2">
                                                             {patient.type}
                                                         </div>
+
+                                                        {/* Renewal Badge */}
+                                                        {patient.needsRenewal && (
+                                                            <div className="mt-2 flex items-center bg-red-50 text-red-700 px-2 py-1 rounded text-xs font-bold border border-red-100 animate-pulse">
+                                                                <AlertCircle className="w-3 h-3 mr-1" />
+                                                                연장 상담 필요 ({patient.renewalPackageName})
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </Draggable>

@@ -13,7 +13,8 @@ import {
     MoreHorizontal,
     Users,
     Split,
-    CalendarClock
+    CalendarClock,
+    Shield // Added Shield icon
 } from 'lucide-react';
 
 import { db } from '../firebase';
@@ -22,6 +23,7 @@ import { appointmentService } from '../services/appointmentService';
 import { patientService } from '../services/patientService';
 import { visitService } from '../services/visitService';
 import ReservationModal from '../components/ReservationModal';
+import ConsultationExitModal from '../components/ConsultationExitModal'; // Added Import
 
 // Portal Component for Autocomplete
 const AutocompletePortal = ({ rect, list, onSelect, portalRef }) => {
@@ -87,7 +89,12 @@ const PaymentPage = () => {
     const [splitPrepaidAmount, setSplitPrepaidAmount] = useState('');
 
     // Reservation Modal State
+    // Reservation Modal State
     const [reservationModalOpen, setReservationModalOpen] = useState(false);
+
+    // Consultation Exit Modal State
+    const [exitModalOpen, setExitModalOpen] = useState(false);
+    const [selectedPatientForExit, setSelectedPatientForExit] = useState(null);
 
     // Load patients for autocomplete on mount
     useEffect(() => {
@@ -783,6 +790,16 @@ const PaymentPage = () => {
                     onClose={() => setReservationModalOpen(false)}
                     selectedDate={selectedDate}
                 />
+
+                {/* Consultation Exit Modal (Part 1) */}
+                <ConsultationExitModal
+                    isOpen={exitModalOpen}
+                    onClose={() => setExitModalOpen(false)}
+                    patient={selectedPatientForExit}
+                    onReservationSuccess={() => {
+                        console.log("Reservation defended successfully!");
+                    }}
+                />
             </div>
 
             {/* Context Menu */}
@@ -798,58 +815,65 @@ const PaymentPage = () => {
                             className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm flex items-center"
                         >
                             <CreditCard className="w-4 h-4 mr-2 text-purple-600" />
-                            {incomes.find(i => i.id === contextMenu.rowId)?.prepaidFields?.includes(contextMenu.field) ? '선수납/패키지 해제' : '선수납/패키지 처리'}
+                            {(() => {
+                                const item = incomes.find(i => i.id === contextMenu.rowId);
+                                const isPrepaid = (item?.prepaidFields || []).includes(contextMenu.field);
+                                return isPrepaid ? '선결제 해제' : '선결제 처리';
+                            })()}
+                        </button>
+                        <button
+                            onClick={() => {
+                                const item = incomes.find(i => i.id === contextMenu.rowId);
+                                if (item && item.name) {
+                                    setSelectedPatientForExit({ id: item.id, name: item.name });
+                                    setExitModalOpen(true);
+                                    setContextMenu({ ...contextMenu, visible: false });
+                                } else {
+                                    alert("환자 이름이 없습니다.");
+                                }
+                            }}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm flex items-center text-blue-600 font-bold"
+                        >
+                            <Shield className="w-4 h-4 mr-2" />
+                            퇴실/예약 방어
                         </button>
                     </div>
                 )
             }
 
-            {/* Split Payment Modal */}
+            {/* Split Modal */}
             {
                 splitModal.visible && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-lg shadow-xl p-6 w-80">
-                            <h3 className="text-lg font-bold mb-4 flex items-center">
-                                <Split className="w-5 h-5 mr-2 text-purple-600" />
-                                선수납/패키지 분할
-                            </h3>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">총 금액</label>
-                                    <div className="text-lg font-bold text-gray-900">{fmt(splitModal.totalAmount)}원</div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">선수납 적용 금액</label>
-                                    <input
-                                        type="number"
-                                        value={splitPrepaidAmount}
-                                        onChange={(e) => setSplitPrepaidAmount(e.target.value)}
-                                        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
-                                        autoFocus
-                                    />
-                                </div>
-                                <div className="pt-2 border-t border-gray-100">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">일반 결제 (자동 분리)</span>
-                                        <span className="font-bold">
-                                            {fmt(splitModal.totalAmount - (Number(splitPrepaidAmount) || 0))}원
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="flex space-x-2 pt-2">
-                                    <button
-                                        onClick={() => setSplitModal({ visible: false, rowId: null, field: null, totalAmount: 0 })}
-                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                                    >
-                                        취소
-                                    </button>
-                                    <button
-                                        onClick={confirmSplit}
-                                        className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
-                                    >
-                                        확인
-                                    </button>
-                                </div>
+                        <div className="bg-white rounded-lg p-6 w-80 shadow-xl">
+                            <h3 className="text-lg font-bold mb-4">선결제 금액 분할</h3>
+                            <div className="mb-4">
+                                <label className="block text-sm text-gray-600 mb-1">총 금액</label>
+                                <div className="font-bold text-lg">{fmt(splitModal.totalAmount)}</div>
+                            </div>
+                            <div className="mb-4">
+                                <label className="block text-sm text-gray-600 mb-1">선결제 차감액</label>
+                                <input
+                                    type="number"
+                                    value={splitPrepaidAmount}
+                                    onChange={(e) => setSplitPrepaidAmount(e.target.value)}
+                                    className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="flex justify-end space-x-2">
+                                <button
+                                    onClick={() => setSplitModal({ visible: false, rowId: null, field: null, totalAmount: 0 })}
+                                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                                >
+                                    취소
+                                </button>
+                                <button
+                                    onClick={confirmSplit}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                >
+                                    확인
+                                </button>
                             </div>
                         </div>
                     </div>

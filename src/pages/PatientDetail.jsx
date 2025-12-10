@@ -11,6 +11,8 @@ import { patientService } from '../services/patientService';
 import { visitService } from '../services/visitService';
 import { productService } from '../services/productService';
 
+import PackageRenewalModal from '../components/patients/PackageRenewalModal'; // Added Import
+
 const PatientDetail = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -18,6 +20,10 @@ const PatientDetail = () => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
     const [isPackageModalOpen, setIsPackageModalOpen] = useState(false);
+
+    // Renewal Modal State
+    const [isRenewalModalOpen, setIsRenewalModalOpen] = useState(false);
+    const [renewalPackageInfo, setRenewalPackageInfo] = useState(null);
 
     const [treatments, setTreatments] = useState([]);
     const [packages, setPackages] = useState([]); // Available package definitions
@@ -249,6 +255,13 @@ const PatientDetail = () => {
                     setVisitItems(visit.items || []);
                     setVisitTotal(visit.totalCost || 0);
                 }
+            }
+
+            // --- Check for Renewal Alert ---
+            const remaining = pkg.totalCounts - (pkg.usedCounts + 1);
+            if (remaining === 1) {
+                setRenewalPackageInfo(pkg);
+                setIsRenewalModalOpen(true);
             }
 
         } catch (error) {
@@ -549,6 +562,17 @@ const PatientDetail = () => {
                 onClose={() => setIsPackageModalOpen(false)}
                 onSelect={handlePackageSelect}
                 packages={packages}
+            />
+
+            {/* Package Renewal Modal */}
+            <PackageRenewalModal
+                isOpen={isRenewalModalOpen}
+                onClose={() => setIsRenewalModalOpen(false)}
+                packageInfo={renewalPackageInfo}
+                onConfirm={() => {
+                    alert("상담 기록이 저장되었습니다. (데모)");
+                    setIsRenewalModalOpen(false);
+                }}
             />
         </div>
     );

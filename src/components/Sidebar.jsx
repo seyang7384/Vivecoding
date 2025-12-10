@@ -13,7 +13,8 @@ import {
     Book,
     Mic,
     CheckSquare,
-    Banknote
+    Banknote,
+    Shield // Added Shield icon
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -28,6 +29,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { icon: Mic, label: '음성 관제 (HQ)', path: '/voice-hq' },
         { icon: CheckSquare, label: '업무 체크리스트', path: '/todo' },
         { icon: Banknote, label: '수납 일지', path: '/payment' },
+        { icon: Shield, label: '예약 방어/리콜', path: '/defense' }, // Added Defense Page Link
         { icon: Package, label: '수가 관리', path: '/products' },
         { icon: Settings, label: '설정', path: '/settings' },
     ];
