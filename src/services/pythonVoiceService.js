@@ -64,6 +64,10 @@ class PythonVoiceService {
                 if (msg.type === 'corrections' && this.callbacks.onCorrections) {
                     this.callbacks.onCorrections(msg.data);
                 }
+
+                if (msg.type === 'treatment_plan' && this.callbacks.onTreatmentPlan) {
+                    this.callbacks.onTreatmentPlan(msg.plan, msg.provider);
+                }
             } catch (e) {
                 console.error('Failed to parse message:', e);
             }
@@ -143,6 +147,22 @@ class PythonVoiceService {
                 command: 'save_corrections',
                 data: corrections
             }));
+        }
+    }
+
+    generateTreatmentPlan(transcript, provider = 'openai') {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({
+                command: 'generate_treatment_plan',
+                transcript: transcript,
+                provider: provider
+            }));
+            console.log(`🧠 Requested treatment plan using ${provider}`);
+        } else {
+            console.error('WebSocket not connected');
+            if (this.callbacks.onError) {
+                this.callbacks.onError(new Error('서버와 연결되지 않았습니다.'));
+            }
         }
     }
 

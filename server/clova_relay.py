@@ -194,6 +194,112 @@ class ClovaRelayServer:
         if self.worker_thread: self.worker_thread.join(timeout=1)
         print("✅ Recording Stopped")
 
+    def _call_openai(self, prompt):
+        api_key = os.getenv('OPENAI_API_KEY') or os.getenv('VITE_OPENAI_API_KEY')
+        if not api_key: return "❌ OpenAI API Key missing"
+        
+        try:
+            res = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": "gpt-4o",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.7
+                },
+                timeout=30
+            )
+            if res.status_code == 200:
+                return res.json()['choices'][0]['message']['content']
+            return f"❌ OpenAI Error {res.status_code}: {res.text}"
+        except Exception as e:
+            return f"❌ OpenAI Request Failed: {e}"
+
+    def _call_gemini(self, prompt):
+        api_key = os.getenv('GEMINI_API_KEY')
+        if not api_key: return "❌ Gemini API Key missing"
+        
+        try:
+            # Gemini 1.5 Flash (or Pro)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+            res = requests.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}]
+                },
+                timeout=30
+            )
+            if res.status_code == 200:
+                return res.json()['candidates'][0]['content']['parts'][0]['text']
+            return f"❌ Gemini Error {res.status_code}: {res.text}"
+        except Exception as e:
+            return f"❌ Gemini Request Failed: {e}"
+
+    def _call_claude(self, prompt):
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key: return "❌ Anthropic API Key missing"
+        
+        try:
+            res = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-3-5-sonnet-20240620",
+                    "max_tokens": 1000,
+                    "messages": [{"role": "user", "content": prompt}]
+                },
+                timeout=30
+            )
+            if res.status_code == 200:
+                return res.json()['content'][0]['text']
+            return f"❌ Claude Error {res.status_code}: {res.text}"
+        except Exception as e:
+            return f"❌ Claude Request Failed: {e}"
+
+    async def generate_treatment_plan(self, transcript, patient_name='환자', provider='openai'):
+        print(f"🧠 Generating Plan using {provider}...")
+        
+        prompt = f"""# Role
+당신은 30년 경력의 베테랑 한의사 '세양한의원 원장'입니다. 
+환자와의 진료 녹취록(Transcript)을 바탕으로, 환자에게 카카오톡이나 문자로 발송할 [치료 계획서]를 작성해야 합니다.
+
+# Tone & Manner
+- 전문적이지만 매우 친절하고 공감하는 어조를 사용하세요.
+- 딱딱한 의학 용어보다는 환자가 이해하기 쉬운 비유를 섞어 설명하세요.
+- 환자가 진료 중에 스치듯 말한 사적인 내용(여행, 가족 행사, 스트레스 등)을 기억했다가 안부 인사에 녹여내세요.
+
+# Instructions
+1. [진단 요약]: 환자의 주호소(Chief Complaint)와 원장이 판단한 원인을 간략히 설명하세요.
+2. [오늘의 치료]: 오늘 어떤 시술(침, 약침, 추나 등)을 했고, 그것이 어떤 효과가 있는지 설명하세요.
+3. [생활 관리]: 식습관, 자세, 운동 등 집에서 지켜야 할 사항을 1~2가지 구체적으로 제안하세요.
+4. [다음 일정]: 언제 다시 내원해야 하는지 안내하세요.
+
+# Input Data
+- 녹취록: {transcript}
+- 환자 이름: {patient_name}
+
+# Output Format (Example)
+안녕하세요, {{patient_name}}님. 세양한의원입니다.
+오늘 허리 통증으로 많이 불편하셨죠? 진료 때 말씀하신 대로... (중략)
+...
+다음 주 여행 가신다고 하셨는데, 무리하지 마시고 즐겁게 다녀오세요.
+"""
+        
+        if provider == 'gemini':
+            result = self._call_gemini(prompt)
+        elif provider == 'claude':
+            result = self._call_claude(prompt)
+        else:
+            result = self._call_openai(prompt)
+            
+        print(f"✅ Plan Generated ({len(result)} chars)")
+        return result
+
     async def handle_client(self, websocket):
         # Enforce single client: Clear existing clients to prevent duplicates
         if self.websocket_clients:
@@ -233,6 +339,15 @@ class ClovaRelayServer:
                             new_corrections = data.get('data', {})
                             self.save_corrections(new_corrections)
                             await self.broadcast('corrections', {'data': self.corrections})
+                        elif cmd == 'generate_treatment_plan':
+                            transcript = data.get('transcript', '')
+                            provider = data.get('provider', 'openai')
+                            plan = await self.generate_treatment_plan(transcript, provider)
+                            await websocket.send(json.dumps({
+                                'type': 'treatment_plan',
+                                'plan': plan,
+                                'provider': provider
+                            }))
                     except json.JSONDecodeError:
                         pass
         except: pass

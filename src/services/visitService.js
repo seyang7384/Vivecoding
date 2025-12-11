@@ -41,7 +41,7 @@ export const visitService = {
      * Create or update a visit record
      * @param {string} patientId 
      * @param {string} date 
-     * @param {object} data - { items: [], totalCost: 0, status: 'treating' }
+     * @param {object} data - { items: [], totalCost: 0, status: 'treating', transcript: string, treatmentPlan: string, planProvider: string }
      */
     saveVisit: async (patientId, date, data) => {
         try {

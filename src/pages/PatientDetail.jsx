@@ -30,6 +30,7 @@ const PatientDetail = () => {
     const [visitItems, setVisitItems] = useState([]);
     const [visitTotal, setVisitTotal] = useState(0);
     const [selectedTreatmentId, setSelectedTreatmentId] = useState('');
+    const [treatmentPlan, setTreatmentPlan] = useState(null); // New: Treatment Plan
 
     useEffect(() => {
         const fetchPatient = async () => {
@@ -70,6 +71,15 @@ const PatientDetail = () => {
                 if (visit) {
                     setVisitItems(visit.items || []);
                     setVisitTotal(visit.totalCost || 0);
+                    // Load treatment plan if exists
+                    if (visit.treatmentPlan) {
+                        setTreatmentPlan({
+                            plan: visit.treatmentPlan,
+                            transcript: visit.transcript,
+                            provider: visit.planProvider,
+                            date: today
+                        });
+                    }
                 }
             }
         };
@@ -530,6 +540,23 @@ const PatientDetail = () => {
                             ))}
                         </div>
                     </div>
+
+                    {/* Treatment Plan Section (New!) */}
+                    {treatmentPlan && (
+                        <div className="bg-white rounded-xl shadow-sm p-6 border-2 border-purple-100">
+                            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                                <FileText className="w-5 h-5 mr-2 text-purple-600" />
+                                AI 생성 치료 계획서
+                                <span className="ml-2 text-xs font-normal text-gray-400">
+                                    ({treatmentPlan.provider === 'gemini' ? 'Gemini' : treatmentPlan.provider === 'claude' ? 'Claude' : 'GPT-4o'})
+                                </span>
+                            </h3>
+                            <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap bg-gray-50 p-4 rounded-lg max-h-96 overflow-y-auto">
+                                {treatmentPlan.plan}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-3">생성일: {treatmentPlan.date}</p>
+                        </div>
+                    )}
                 </div>
             </div>
 
